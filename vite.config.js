@@ -6,6 +6,9 @@ export default defineConfig({
   server: {
     port: 3301,
     strictPort: true,
+    proxy: {
+      '/api': 'http://localhost:3302',
+    },
   },
   preview: {
     port: 3301,

@@ -7,22 +7,24 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
 
-const CHANNEL_NAME = 'stream-counter'
-
 const count = ref(0)
-let channel = null
+let source = null
 
 onMounted(() => {
-  channel = new BroadcastChannel(CHANNEL_NAME)
-  channel.onmessage = (event) => {
-    if (typeof event.data?.count === 'number') {
-      count.value = event.data.count
+  source = new EventSource('/api/events')
+  source.onmessage = (event) => {
+    const data = JSON.parse(event.data)
+    if (typeof data?.count === 'number') {
+      count.value = data.count
     }
+  }
+  source.onerror = () => {
+    console.warn('[overlay] SSE connection lost, will retry automatically.')
   }
 })
 
 onUnmounted(() => {
-  channel?.close()
+  source?.close()
 })
 </script>
 

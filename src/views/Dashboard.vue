@@ -8,44 +8,32 @@
       <button @click="increment">+</button>
       <button class="reset" @click="reset">Reset</button>
     </div>
-    <p class="hint">Changes are broadcast to the Overlay page in real time.</p>
+    <p class="hint">Changes are sent to the server and forwarded to the Overlay page in real time.</p>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
-
-const CHANNEL_NAME = 'stream-counter'
+import { ref } from 'vue'
 
 const count = ref(0)
-let channel = null
 
-function broadcast() {
-  channel?.postMessage({ count: count.value })
+async function sendCount(value) {
+  const previous = count.value
+  count.value = value
+  try {
+    await fetch('/api/counter', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ count: value }),
+    })
+  } catch {
+    count.value = previous
+  }
 }
 
-function increment() {
-  count.value++
-  broadcast()
-}
-
-function decrement() {
-  count.value--
-  broadcast()
-}
-
-function reset() {
-  count.value = 0
-  broadcast()
-}
-
-onMounted(() => {
-  channel = new BroadcastChannel(CHANNEL_NAME)
-})
-
-onUnmounted(() => {
-  channel?.close()
-})
+function increment() { sendCount(count.value + 1) }
+function decrement() { sendCount(count.value - 1) }
+function reset()     { sendCount(0) }
 </script>
 
 <style scoped>
