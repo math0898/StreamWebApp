@@ -1,18 +1,18 @@
 <template>
   <div class="overlay">
     <div class="bars">
-      <div class="bar-row">
-        <span class="bar-label">Counter 1</span>
+      <div class="bar-row" :style="barStyle(bar1)">
+        <span class="bar-label">{{ label1 }}</span>
         <div class="bar-track">
-          <div class="bar-fill bar-fill--1" :style="{ width: pct(count1) }"></div>
+          <div class="bar-fill" :style="{ width: pct(count1), background: color1 }"></div>
         </div>
         <span class="bar-value">{{ count1 }} / {{ max }}</span>
       </div>
 
-      <div class="bar-row">
-        <span class="bar-label">Counter 2</span>
+      <div class="bar-row" :style="barStyle(bar2)">
+        <span class="bar-label">{{ label2 }}</span>
         <div class="bar-track">
-          <div class="bar-fill bar-fill--2" :style="{ width: pct(count2) }"></div>
+          <div class="bar-fill" :style="{ width: pct(count2), background: color2 }"></div>
         </div>
         <span class="bar-value">{{ count2 }} / {{ max }}</span>
       </div>
@@ -26,11 +26,23 @@ import { ref, onMounted, onUnmounted } from 'vue'
 const count1 = ref(0)
 const count2 = ref(0)
 const max    = ref(100)
+const label1 = ref('Counter 1')
+const label2 = ref('Counter 2')
+const color1 = ref('#82b1ff')
+const color2 = ref('#a5d6a7')
+const bar1   = ref({ x: 0, y: 0, scaleX: 1, scaleY: 1 })
+const bar2   = ref({ x: 0, y: 0, scaleX: 1, scaleY: 1 })
 let source = null
 
 function pct(count) {
   if (max.value <= 0) return '0%'
   return `${Math.min(100, Math.max(0, (count / max.value) * 100))}%`
+}
+
+function barStyle(bar) {
+  return {
+    transform: `translate(${bar.x}px, ${bar.y}px) scale(${bar.scaleX}, ${bar.scaleY})`,
+  }
 }
 
 onMounted(() => {
@@ -39,7 +51,13 @@ onMounted(() => {
     const data = JSON.parse(event.data)
     if (typeof data?.count1 === 'number') count1.value = data.count1
     if (typeof data?.count2 === 'number') count2.value = data.count2
-    if (typeof data?.max   === 'number') max.value    = data.max
+    if (typeof data?.max    === 'number') max.value    = data.max
+    if (typeof data?.label1 === 'string') label1.value = data.label1
+    if (typeof data?.label2 === 'string') label2.value = data.label2
+    if (typeof data?.color1 === 'string') color1.value = data.color1
+    if (typeof data?.color2 === 'string') color2.value = data.color2
+    if (data?.bar1) bar1.value = { ...bar1.value, ...data.bar1 }
+    if (data?.bar2) bar2.value = { ...bar2.value, ...data.bar2 }
   }
   source.onerror = (event) => {
     console.warn('[overlay] SSE connection lost, will retry automatically.', event)
@@ -72,6 +90,7 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: 0.4rem;
+  transform-origin: center center;
 }
 
 .bar-label {
@@ -93,14 +112,6 @@ onUnmounted(() => {
   height: 100%;
   border-radius: 14px;
   transition: width 0.2s ease;
-}
-
-.bar-fill--1 {
-  background: #82b1ff;
-}
-
-.bar-fill--2 {
-  background: #a5d6a7;
 }
 
 .bar-value {
