@@ -5,27 +5,48 @@
     <!-- ── Counts ─────────────────────────────────────── -->
     <section class="section">
       <h2 class="section-title">Counts</h2>
-
-      <div class="row">
-        <label class="field-label" for="max-input">Max</label>
-        <input
-          id="max-input"
-          type="number"
-          min="1"
-          :value="max"
-          @change="setField('max', $event.target.valueAsNumber)"
-        />
-        <button class="reset-sm" @click="setField('max', 100)">Reset</button>
-      </div>
-
-      <div class="counters">
-        <div v-for="n in [1, 2]" :key="n" class="counter-block">
-          <p class="label">{{ n === 1 ? label1 : label2 }}</p>
+      <div class="two-col">
+        <div v-for="n in [1, 2]" :key="n" class="col">
+          <p class="col-title">{{ n === 1 ? label1 : label2 }}</p>
           <p class="count">{{ n === 1 ? count1 : count2 }}</p>
-          <div class="controls">
+
+          <!-- increment / decrement by step -->
+          <div class="row">
             <button @click="adjustCount(n, -1)">−</button>
+            <input
+              type="number"
+              class="step-input"
+              :value="n === 1 ? step1 : step2"
+              @change="setStepLocal(n, $event.target.value)"
+              title="Step size"
+            />
             <button @click="adjustCount(n, +1)">+</button>
+          </div>
+
+          <!-- direct set -->
+          <div class="row">
+            <input
+              type="number"
+              class="set-input"
+              placeholder="Set value…"
+              :value="n === 1 ? setVal1 : setVal2"
+              @input="updateSetVal(n, $event.target.value)"
+              @keyup.enter="setCount(n)"
+            />
+            <button @click="setCount(n)">Set</button>
             <button class="reset" @click="setField(`count${n}`, 0)">Reset</button>
+          </div>
+
+          <!-- goal (max) -->
+          <div class="row">
+            <label class="field-label">Goal</label>
+            <input
+              type="number"
+              min="1"
+              :value="n === 1 ? max1 : max2"
+              @change="setField(`max${n}`, $event.target.valueAsNumber)"
+            />
+            <button class="reset-sm" @click="setField(`max${n}`, 100)">Reset</button>
           </div>
         </div>
       </div>
@@ -70,15 +91,40 @@
         <div v-for="n in [1, 2]" :key="n" class="col">
           <p class="col-title">Bar {{ n }}</p>
 
-          <div v-for="{ key, label: lbl, step, def } in layoutFields" :key="key" class="row">
-            <label class="field-label">{{ lbl }}</label>
+          <p class="sub-title">Bar</p>
+          <div v-for="f in barFields" :key="'b' + f.key" class="row">
+            <label class="field-label">{{ f.label }}</label>
             <input
               type="number"
-              :step="step"
-              :value="(n === 1 ? bar1 : bar2)[key]"
-              @change="setBarField(n, key, $event.target.valueAsNumber)"
+              :step="f.step"
+              :value="(n === 1 ? bar1 : bar2)[f.key]"
+              @change="setNestedField(`bar${n}`, f.key, $event.target.valueAsNumber)"
             />
-            <button class="reset-sm" @click="setBarField(n, key, def)">Reset</button>
+            <button class="reset-sm" @click="setNestedField(`bar${n}`, f.key, f.def)">Reset</button>
+          </div>
+
+          <p class="sub-title">Title</p>
+          <div v-for="f in titleFields" :key="'t' + f.key" class="row">
+            <label class="field-label">{{ f.label }}</label>
+            <input
+              type="number"
+              :step="f.step"
+              :value="(n === 1 ? title1 : title2)[f.key]"
+              @change="setNestedField(`title${n}`, f.key, $event.target.valueAsNumber)"
+            />
+            <button class="reset-sm" @click="setNestedField(`title${n}`, f.key, f.def)">Reset</button>
+          </div>
+
+          <p class="sub-title">Value</p>
+          <div v-for="f in valueFields" :key="'v' + f.key" class="row">
+            <label class="field-label">{{ f.label }}</label>
+            <input
+              type="number"
+              :step="f.step"
+              :value="(n === 1 ? value1 : value2)[f.key]"
+              @change="setNestedField(`value${n}`, f.key, $event.target.valueAsNumber)"
+            />
+            <button class="reset-sm" @click="setNestedField(`value${n}`, f.key, f.def)">Reset</button>
           </div>
         </div>
       </div>
@@ -91,34 +137,62 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 
+// ── Server-persisted state ────────────────────────────────────
 const count1 = ref(0)
 const count2 = ref(0)
-const max    = ref(100)
+const max1   = ref(100)
+const max2   = ref(100)
 const label1 = ref('Counter 1')
 const label2 = ref('Counter 2')
 const color1 = ref('#82b1ff')
 const color2 = ref('#a5d6a7')
 const bar1   = ref({ x: 0, y: 0, scaleX: 1, scaleY: 1 })
 const bar2   = ref({ x: 0, y: 0, scaleX: 1, scaleY: 1 })
+const title1 = ref({ x: 0, y: 0, fontSize: 16 })
+const title2 = ref({ x: 0, y: 0, fontSize: 16 })
+const value1 = ref({ x: 0, y: 0, fontSize: 14 })
+const value2 = ref({ x: 0, y: 0, fontSize: 14 })
 
-const layoutFields = [
+// ── Local UI state (not persisted) ───────────────────────────
+const step1   = ref(1)
+const step2   = ref(1)
+const setVal1 = ref('')
+const setVal2 = ref('')
+
+// ── Lookup maps for generic helpers ──────────────────────────
+const stateRefs  = { count1, count2, max1, max2, label1, label2, color1, color2 }
+const nestedRefs = { bar1, bar2, title1, title2, value1, value2 }
+
+// ── Field descriptors ─────────────────────────────────────────
+const barFields = [
   { key: 'x',      label: 'X Offset', step: 1,   def: 0 },
   { key: 'y',      label: 'Y Offset', step: 1,   def: 0 },
   { key: 'scaleX', label: 'Scale X',  step: 0.1, def: 1 },
   { key: 'scaleY', label: 'Scale Y',  step: 0.1, def: 1 },
 ]
+const titleFields = [
+  { key: 'x',        label: 'X Offset',  step: 1, def: 0  },
+  { key: 'y',        label: 'Y Offset',  step: 1, def: 0  },
+  { key: 'fontSize', label: 'Font Size', step: 1, def: 16 },
+]
+const valueFields = [
+  { key: 'x',        label: 'X Offset',  step: 1, def: 0  },
+  { key: 'y',        label: 'Y Offset',  step: 1, def: 0  },
+  { key: 'fontSize', label: 'Font Size', step: 1, def: 14 },
+]
 
+// ── State sync helpers ────────────────────────────────────────
 function applyState(data) {
   if (data == null) return
-  if (typeof data.count1 === 'number') count1.value = data.count1
-  if (typeof data.count2 === 'number') count2.value = data.count2
-  if (typeof data.max    === 'number') max.value    = data.max
-  if (typeof data.label1 === 'string') label1.value = data.label1
-  if (typeof data.label2 === 'string') label2.value = data.label2
-  if (typeof data.color1 === 'string') color1.value = data.color1
-  if (typeof data.color2 === 'string') color2.value = data.color2
-  if (data.bar1) bar1.value = { ...bar1.value, ...data.bar1 }
-  if (data.bar2) bar2.value = { ...bar2.value, ...data.bar2 }
+  for (const key of ['count1', 'count2', 'max1', 'max2']) {
+    if (typeof data[key] === 'number') stateRefs[key].value = data[key]
+  }
+  for (const key of ['label1', 'label2', 'color1', 'color2']) {
+    if (typeof data[key] === 'string') stateRefs[key].value = data[key]
+  }
+  for (const key of Object.keys(nestedRefs)) {
+    if (data[key]) nestedRefs[key].value = { ...nestedRefs[key].value, ...data[key] }
+  }
 }
 
 onMounted(async () => {
@@ -148,31 +222,50 @@ async function post(patch) {
   }
 }
 
-function adjustCount(n, delta) {
-  const key = `count${n}`
-  const val = (n === 1 ? count1 : count2).value + delta
-  if (n === 1) count1.value = val
-  else         count2.value = val
-  post({ [key]: val })
+// ── Counter actions ───────────────────────────────────────────
+function adjustCount(n, direction) {
+  const step  = (n === 1 ? step1 : step2).value
+  const count = n === 1 ? count1 : count2
+  const val   = count.value + direction * step
+  count.value = val
+  post({ [`count${n}`]: val })
 }
 
+function setCount(n) {
+  const svRef = n === 1 ? setVal1 : setVal2
+  const val   = Number(svRef.value)
+  if (!Number.isFinite(val)) return
+  const count = n === 1 ? count1 : count2
+  count.value = val
+  svRef.value = ''
+  post({ [`count${n}`]: val })
+}
+
+function setStepLocal(n, raw) {
+  const val = Number(raw)
+  if (!Number.isFinite(val) || val <= 0) return
+  if (n === 1) step1.value = val
+  else         step2.value = val
+}
+
+function updateSetVal(n, val) {
+  if (n === 1) setVal1.value = val
+  else         setVal2.value = val
+}
+
+// ── Generic field setters ─────────────────────────────────────
 function setField(key, value) {
-  if (key === 'count1') count1.value = value
-  else if (key === 'count2') count2.value = value
-  else if (key === 'max')    max.value    = value
-  else if (key === 'label1') label1.value = value
-  else if (key === 'label2') label2.value = value
-  else if (key === 'color1') color1.value = value
-  else if (key === 'color2') color2.value = value
-  if (key === 'max' && (!Number.isFinite(value) || value < 1)) return
+  if ((key === 'max1' || key === 'max2') && (!Number.isFinite(value) || value < 1)) return
+  if (stateRefs[key] !== undefined) stateRefs[key].value = value
   post({ [key]: value })
 }
 
-function setBarField(n, key, value) {
+function setNestedField(objKey, field, value) {
   if (!Number.isFinite(value)) return
-  const bar = n === 1 ? bar1 : bar2
-  bar.value = { ...bar.value, [key]: value }
-  post({ [`bar${n}`]: { [key]: value } })
+  if (field === 'fontSize' && value < 1) return
+  const obj = nestedRefs[objKey]
+  obj.value = { ...obj.value, [field]: value }
+  post({ [objKey]: { [field]: value } })
 }
 </script>
 
@@ -186,7 +279,6 @@ function setBarField(n, key, value) {
   align-items: center;
   padding: 2.5rem 1.5rem;
   font-family: sans-serif;
-  gap: 0;
   overflow-y: auto;
   box-sizing: border-box;
 }
@@ -213,11 +305,20 @@ h1 {
   margin: 0 0 1rem;
 }
 
+.sub-title {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #424242;
+  margin: 0.75rem 0 0.35rem;
+}
+
 .row {
   display: flex;
   align-items: center;
   gap: 0.6rem;
-  margin-bottom: 0.6rem;
+  margin-bottom: 0.5rem;
 }
 
 .field-label {
@@ -254,39 +355,42 @@ input[type='color'] {
   cursor: pointer;
 }
 
-.counters {
+.step-input {
+  width: 4rem !important;
+}
+
+.set-input {
+  flex: 1;
+  min-width: 0;
+  text-align: left !important;
+}
+
+.two-col {
   display: flex;
-  gap: 3rem;
+  gap: 2rem;
   flex-wrap: wrap;
-  justify-content: center;
-  margin-top: 0.5rem;
 }
 
-.counter-block {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.5rem;
+.col {
+  flex: 1;
+  min-width: 220px;
 }
 
-.label {
-  font-size: 1rem;
-  color: #9e9e9e;
-  margin: 0;
+.col-title {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #757575;
+  margin: 0 0 0.6rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
 }
 
 .count {
-  font-size: 4.5rem;
+  font-size: 3.5rem;
   font-weight: bold;
-  margin: 0;
+  margin: 0 0 0.5rem;
   color: #82b1ff;
   line-height: 1;
-}
-
-.controls {
-  display: flex;
-  gap: 0.6rem;
-  margin-top: 0.25rem;
 }
 
 button {
@@ -317,26 +421,6 @@ button.reset:hover { background-color: #2a1a1a; }
   border-color: #3a3a3a;
 }
 .reset-sm:hover { background-color: #1a1a1a; }
-
-.two-col {
-  display: flex;
-  gap: 2rem;
-  flex-wrap: wrap;
-}
-
-.col {
-  flex: 1;
-  min-width: 220px;
-}
-
-.col-title {
-  font-size: 0.8rem;
-  font-weight: 600;
-  color: #757575;
-  margin: 0 0 0.6rem;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-}
 
 .hint {
   font-size: 0.8rem;
