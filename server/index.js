@@ -48,6 +48,10 @@ const DEFAULT_NOW_PLAYING_POPUP = {
     songEndShowSec: 3,
     periodicIntervalSec: 45,
     periodicShowSec: 4,
+    transitionDurationSec: 0.35,
+    motionDirection: 'down',
+    motionDistancePx: 14,
+    motionInterpolation: 'linear',
   },
 }
 const musicDebugMessages = []
@@ -138,6 +142,18 @@ function normalizeNowPlayingPopup(savedPopup) {
       periodicShowSec: typeof animation.periodicShowSec === 'number' && animation.periodicShowSec >= 0
         ? animation.periodicShowSec
         : DEFAULT_NOW_PLAYING_POPUP.animation.periodicShowSec,
+      transitionDurationSec: typeof animation.transitionDurationSec === 'number' && animation.transitionDurationSec >= 0
+        ? animation.transitionDurationSec
+        : DEFAULT_NOW_PLAYING_POPUP.animation.transitionDurationSec,
+      motionDirection: ['none', 'up', 'down', 'left', 'right'].includes(animation.motionDirection)
+        ? animation.motionDirection
+        : DEFAULT_NOW_PLAYING_POPUP.animation.motionDirection,
+      motionDistancePx: typeof animation.motionDistancePx === 'number' && animation.motionDistancePx >= 0
+        ? animation.motionDistancePx
+        : DEFAULT_NOW_PLAYING_POPUP.animation.motionDistancePx,
+      motionInterpolation: ['linear', 'quadratic', 'exponential'].includes(animation.motionInterpolation)
+        ? animation.motionInterpolation
+        : DEFAULT_NOW_PLAYING_POPUP.animation.motionInterpolation,
     },
   }
 }
@@ -160,6 +176,18 @@ function patchNowPlayingPopup(target, patch) {
     }
     if (typeof patch.animation.periodicShowSec === 'number' && patch.animation.periodicShowSec >= 0) {
       target.animation.periodicShowSec = patch.animation.periodicShowSec
+    }
+    if (typeof patch.animation.transitionDurationSec === 'number' && patch.animation.transitionDurationSec >= 0) {
+      target.animation.transitionDurationSec = patch.animation.transitionDurationSec
+    }
+    if (['none', 'up', 'down', 'left', 'right'].includes(patch.animation.motionDirection)) {
+      target.animation.motionDirection = patch.animation.motionDirection
+    }
+    if (typeof patch.animation.motionDistancePx === 'number' && patch.animation.motionDistancePx >= 0) {
+      target.animation.motionDistancePx = patch.animation.motionDistancePx
+    }
+    if (['linear', 'quadratic', 'exponential'].includes(patch.animation.motionInterpolation)) {
+      target.animation.motionInterpolation = patch.animation.motionInterpolation
     }
   }
 }

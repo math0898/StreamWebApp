@@ -75,6 +75,10 @@ const popupConfig = ref({
     songEndShowSec: 3,
     periodicIntervalSec: 45,
     periodicShowSec: 4,
+    transitionDurationSec: 0.35,
+    motionDirection: 'down',
+    motionDistancePx: 14,
+    motionInterpolation: 'linear',
   },
 })
 const popupVisible = ref(false)
@@ -170,6 +174,10 @@ function normalizePopupConfig(rawConfig) {
       songEndShowSec: typeof animation.songEndShowSec === 'number' && animation.songEndShowSec >= 0 ? animation.songEndShowSec : 3,
       periodicIntervalSec: typeof animation.periodicIntervalSec === 'number' && animation.periodicIntervalSec >= 0 ? animation.periodicIntervalSec : 45,
       periodicShowSec: typeof animation.periodicShowSec === 'number' && animation.periodicShowSec >= 0 ? animation.periodicShowSec : 4,
+      transitionDurationSec: typeof animation.transitionDurationSec === 'number' && animation.transitionDurationSec >= 0 ? animation.transitionDurationSec : 0.35,
+      motionDirection: ['none', 'up', 'down', 'left', 'right'].includes(animation.motionDirection) ? animation.motionDirection : 'down',
+      motionDistancePx: typeof animation.motionDistancePx === 'number' && animation.motionDistancePx >= 0 ? animation.motionDistancePx : 14,
+      motionInterpolation: ['linear', 'quadratic', 'exponential'].includes(animation.motionInterpolation) ? animation.motionInterpolation : 'linear',
     },
   }
   if (popupConfig.value.hiddenVisual) popupVisible.value = false
@@ -268,9 +276,33 @@ const shouldShowNowPlaying = computed(() => {
   return popupVisible.value
 })
 
-const popupStyle = computed(() => ({
-  transform: `translate(${popupConfig.value.x}px, ${popupConfig.value.y}px)`,
-}))
+function motionVector(direction) {
+  if (direction === 'up') return { x: 0, y: -1 }
+  if (direction === 'down') return { x: 0, y: 1 }
+  if (direction === 'left') return { x: -1, y: 0 }
+  if (direction === 'right') return { x: 1, y: 0 }
+  return { x: 0, y: 0 }
+}
+
+function interpolationCurve(kind) {
+  if (kind === 'quadratic') return 'cubic-bezier(0.55, 0.085, 0.68, 0.53)'
+  if (kind === 'exponential') return 'cubic-bezier(0.95, 0.05, 0.795, 0.035)'
+  return 'linear'
+}
+
+const popupStyle = computed(() => {
+  const direction = popupConfig.value.animation.motionDirection
+  const distancePx = popupConfig.value.animation.motionDistancePx
+  const vector = motionVector(direction)
+  return {
+    '--popup-base-x': `${popupConfig.value.x}px`,
+    '--popup-base-y': `${popupConfig.value.y}px`,
+    '--popup-motion-x': `${vector.x * distancePx}px`,
+    '--popup-motion-y': `${vector.y * distancePx}px`,
+    '--popup-transition-duration': `${popupConfig.value.animation.transitionDurationSec}s`,
+    '--popup-motion-ease': interpolationCurve(popupConfig.value.animation.motionInterpolation),
+  }
+})
 
 onMounted(() => {
   source = new EventSource('/api/events')
@@ -355,6 +387,7 @@ onUnmounted(() => {
   position: absolute;
   left: 2rem;
   bottom: 2rem;
+  transform: translate(var(--popup-base-x, 0px), var(--popup-base-y, 0px));
   display: flex;
   align-items: center;
   gap: 0.8rem;
@@ -413,12 +446,17 @@ onUnmounted(() => {
 
 .now-playing-pop-enter-active,
 .now-playing-pop-leave-active {
-  transition: opacity 0.35s ease, transform 0.35s ease;
+  transition:
+    opacity var(--popup-transition-duration, 0.35s) var(--popup-motion-ease, linear),
+    transform var(--popup-transition-duration, 0.35s) var(--popup-motion-ease, linear);
 }
 
 .now-playing-pop-enter-from,
 .now-playing-pop-leave-to {
   opacity: 0;
-  transform: translateY(14px);
+  transform: translate(
+    calc(var(--popup-base-x, 0px) + var(--popup-motion-x, 0px)),
+    calc(var(--popup-base-y, 0px) + var(--popup-motion-y, 0px))
+  );
 }
 </style>

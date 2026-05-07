@@ -150,6 +150,50 @@
             @change="patchPopupSettings({ animation: { periodicShowSec: $event.target.valueAsNumber } })"
           />
         </div>
+        <div class="edit-row">
+          <label class="edit-label">Fade + Motion Duration (sec)</label>
+          <input
+            type="number"
+            min="0"
+            step="0.05"
+            :value="popupSettings.animation.transitionDurationSec"
+            @change="patchPopupSettings({ animation: { transitionDurationSec: $event.target.valueAsNumber } })"
+          />
+        </div>
+        <div class="edit-row">
+          <label class="edit-label">Motion Direction</label>
+          <select
+            :value="popupSettings.animation.motionDirection"
+            @change="patchPopupSettings({ animation: { motionDirection: $event.target.value } })"
+          >
+            <option value="none">None (fade only)</option>
+            <option value="up">Vertical Up</option>
+            <option value="down">Vertical Down</option>
+            <option value="left">Horizontal Left</option>
+            <option value="right">Horizontal Right</option>
+          </select>
+        </div>
+        <div class="edit-row">
+          <label class="edit-label">Motion Distance (px)</label>
+          <input
+            type="number"
+            min="0"
+            step="1"
+            :value="popupSettings.animation.motionDistancePx"
+            @change="patchPopupSettings({ animation: { motionDistancePx: $event.target.valueAsNumber } })"
+          />
+        </div>
+        <div class="edit-row">
+          <label class="edit-label">Motion Interpolation</label>
+          <select
+            :value="popupSettings.animation.motionInterpolation"
+            @change="patchPopupSettings({ animation: { motionInterpolation: $event.target.value } })"
+          >
+            <option value="linear">Linear</option>
+            <option value="quadratic">Quadratic</option>
+            <option value="exponential">Exponential</option>
+          </select>
+        </div>
       </div>
     </div>
 
@@ -316,6 +360,10 @@ const popupSettings = reactive({
     songEndShowSec: 3,
     periodicIntervalSec: 45,
     periodicShowSec: 4,
+    transitionDurationSec: 0.35,
+    motionDirection: 'down',
+    motionDistancePx: 14,
+    motionInterpolation: 'linear',
   },
 })
 
@@ -389,6 +437,10 @@ function applyPopupSettings(nextSettings) {
   popupSettings.animation.songEndShowSec = nextSettings?.animation?.songEndShowSec ?? 3
   popupSettings.animation.periodicIntervalSec = nextSettings?.animation?.periodicIntervalSec ?? 45
   popupSettings.animation.periodicShowSec = nextSettings?.animation?.periodicShowSec ?? 4
+  popupSettings.animation.transitionDurationSec = nextSettings?.animation?.transitionDurationSec ?? 0.35
+  popupSettings.animation.motionDirection = nextSettings?.animation?.motionDirection ?? 'down'
+  popupSettings.animation.motionDistancePx = nextSettings?.animation?.motionDistancePx ?? 14
+  popupSettings.animation.motionInterpolation = nextSettings?.animation?.motionInterpolation ?? 'linear'
 }
 
 async function fetchOverlayState(id) {
@@ -622,6 +674,18 @@ async function patchPopupSettings(patch) {
     }
     if (typeof patch.animation.periodicShowSec === 'number' && Number.isFinite(patch.animation.periodicShowSec)) {
       popupSettings.animation.periodicShowSec = patch.animation.periodicShowSec
+    }
+    if (typeof patch.animation.transitionDurationSec === 'number' && Number.isFinite(patch.animation.transitionDurationSec)) {
+      popupSettings.animation.transitionDurationSec = patch.animation.transitionDurationSec
+    }
+    if (typeof patch.animation.motionDirection === 'string') {
+      popupSettings.animation.motionDirection = patch.animation.motionDirection
+    }
+    if (typeof patch.animation.motionDistancePx === 'number' && Number.isFinite(patch.animation.motionDistancePx)) {
+      popupSettings.animation.motionDistancePx = patch.animation.motionDistancePx
+    }
+    if (typeof patch.animation.motionInterpolation === 'string') {
+      popupSettings.animation.motionInterpolation = patch.animation.motionInterpolation
     }
   }
 
