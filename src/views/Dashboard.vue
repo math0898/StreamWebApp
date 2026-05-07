@@ -638,7 +638,9 @@ async function patchPopupSettings(patch) {
     await fetchMusicState()
   } catch (err) {
     console.warn('[dashboard] Failed to patch popup settings:', err)
-    try { await fetchOverlayState(editingId.value) } catch {}
+    try { await fetchOverlayState(editingId.value) } catch (refreshErr) {
+      console.warn('[dashboard] Failed to refresh overlay state after popup settings patch failure:', refreshErr)
+    }
   }
 }
 </script>

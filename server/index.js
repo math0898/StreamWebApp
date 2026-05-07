@@ -291,9 +291,11 @@ function sanitizeSegment(raw, fallback = 'Unknown') {
   const cleaned = value
     .replace(/[<>:"/\\|?*\u0000-\u001F]/g, '')
     .replace(/\s+/g, ' ')
-    .replace(/\.+$/g, '')
     .trim()
-  return cleaned || fallback
+  let end = cleaned.length
+  while (end > 0 && cleaned.charCodeAt(end - 1) === 46) end -= 1
+  const withoutTrailingDots = cleaned.slice(0, end).trimEnd()
+  return withoutTrailingDots || fallback
 }
 
 function toWebPath(absPath) {
