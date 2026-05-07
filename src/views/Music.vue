@@ -257,9 +257,14 @@ function normalizeAttributeDefinition(definition) {
   if (definition?.id === LIKED_ATTRIBUTE_ID || definition?.type === 'liked') {
     return { id: LIKED_ATTRIBUTE_ID, name: 'Liked', type: 'liked' }
   }
-  const id = typeof definition?.id === 'string' && definition.id.trim() ? definition.id.trim() : `attr-${Date.now()}-${Math.random()}`
+  const id = typeof definition?.id === 'string' && definition.id.trim() ? definition.id.trim() : createAttributeId()
   const name = typeof definition?.name === 'string' && definition.name.trim() ? definition.name.trim() : 'Attribute'
   return { id, name, type: 'custom' }
+}
+
+function createAttributeId() {
+  if (globalThis.crypto?.randomUUID) return `attr-${globalThis.crypto.randomUUID()}`
+  return `attr-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
 }
 
 function normalizeRule(rule) {
@@ -451,7 +456,7 @@ function addCustomAttribute() {
   const name = newAttributeName.value.trim()
   if (!name) return
   editableCustomAttributes.value.push({
-    id: `attr-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    id: createAttributeId(),
     name,
   })
   newAttributeName.value = ''
