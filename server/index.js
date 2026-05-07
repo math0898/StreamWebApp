@@ -1,4 +1,5 @@
 import express from 'express'
+import { rateLimit } from 'express-rate-limit'
 import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync } from 'fs'
 import { join, dirname, extname } from 'path'
 import { fileURLToPath } from 'url'
@@ -23,8 +24,6 @@ const MUSIC_DIR = join(PUBLIC_DIR, 'Music')
 const DEFAULT_MUSIC_LIBRARY_PATH = '/Music'
 const DEFAULT_SONG_DURATION_SEC = 180
 const MAX_DEBUG_MESSAGES = 120
-const IMPORT_RATE_WINDOW_MS = 60_000
-const IMPORT_RATE_MAX = 8
 const AUDIO_EXTENSIONS = new Set(['.mp3', '.ogg', '.wav'])
 const IMAGE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.webp'])
 const DEFAULT_SONG = {
@@ -36,7 +35,14 @@ const DEFAULT_SONG = {
   durationSec: DEFAULT_SONG_DURATION_SEC,
 }
 const musicDebugMessages = []
-const importRateByIp = new Map()
+// Limit import bursts to reduce abuse of repeated file-write operations.
+const musicImportLimiter = rateLimit({
+  windowMs: 60_000,
+  limit: 8,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many import attempts. Please wait and try again.' },
+})
 
 function newId() { return randomUUID().slice(0, 8) }
 
@@ -346,19 +352,6 @@ function extensionForMime(mime, fallback = '') {
   return fallback
 }
 
-function isImportRateLimited(ipAddress) {
-  const now = Date.now()
-  const ip = ipAddress || 'unknown'
-  const bucket = importRateByIp.get(ip)
-  if (!bucket || now - bucket.windowStart >= IMPORT_RATE_WINDOW_MS) {
-    importRateByIp.set(ip, { windowStart: now, count: 1 })
-    return false
-  }
-  if (bucket.count >= IMPORT_RATE_MAX) return true
-  bucket.count += 1
-  return false
-}
-
 function createInitialMusicState() {
   return {
     library: [{ id: 'default-song', ...DEFAULT_SONG }],
@@ -401,7 +394,7 @@ function mergeMusicState(savedMusic) {
     pauseStartedAt = savedMusic.playback.pauseStartedAt
   } else if (status === 'paused') {
     playbackStatus = 'playing'
-    logMusicDebug('Recovered invalid paused playback state without pauseStartedAt; resumed as playing.', 'warn')
+    logMusicDebug('Recovered from invalid paused state (missing pauseStartedAt timestamp). Playback resumed automatically. This may indicate data corruption or incomplete state save.', 'warn')
   }
   return {
     library: library.length > 0 ? library : [{ id: 'default-song', ...DEFAULT_SONG }],
@@ -649,10 +642,7 @@ app.post('/api/music/select', (req, res) => {
   res.json(getMusicSnapshot())
 })
 
-app.post('/api/music/import', (req, res) => {
-  if (isImportRateLimited(req.ip)) {
-    return res.status(429).json({ error: 'Too many import attempts. Please wait and try again.' })
-  }
+app.post('/api/music/import', musicImportLimiter, (req, res) => {
   const artistRaw = req.body?.artist
   const trackNameRaw = req.body?.trackName
   const trackDataUrl = req.body?.trackDataUrl
@@ -707,6 +697,7 @@ app.post('/api/music/import', (req, res) => {
   reloadMusicLibrary()
   const importedTrack = state.music.library.find(track => track.audioPath === toWebPath(trackPath))
   if (importedTrack) setNowPlaying(importedTrack)
+  else logMusicDebug('Warning: Imported track not found in reloaded library.', 'warn')
   logMusicDebug(`Imported track "${trackTitle}" by ${artist}.`)
   saveState()
   broadcast()

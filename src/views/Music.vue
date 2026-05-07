@@ -50,7 +50,7 @@
       <p class="muted" v-if="tracks.length === 0">No tracks loaded.</p>
       <div class="track-grid">
         <article v-for="track in tracks" :key="track.id" class="track-card">
-          <img :src="track.coverPath" :alt="`Album art for ${track.album ?? track.title}`" class="cover" />
+          <img :src="track.coverPath" :alt="`Album art for ${track.album ?? track.title} by ${track.artist ?? 'Unknown Artist'}`" class="cover" />
           <div class="track-info">
             <p class="track-title">{{ track.title }}</p>
             <p class="muted small">{{ track.artist }}</p>
