@@ -1,6 +1,7 @@
 <template>
   <div class="overlay">
     <div class="scene">
+      <audio ref="audioRef" preload="auto"></audio>
       <template v-for="mod in modules" :key="mod.id">
         <template v-if="!mod.hidden">
         <div
@@ -32,14 +33,33 @@
         </div>
         </template>
       </template>
+
+      <transition name="now-playing-pop">
+        <div v-if="shouldShowNowPlaying" class="now-playing-popup">
+          <img class="now-playing-cover" :src="music?.song?.coverPath" :alt="`${music?.song?.album ?? 'Album'} cover`" />
+          <div class="now-playing-info">
+            <p class="now-playing-title">{{ music?.song?.title ?? 'Unknown Song' }}</p>
+            <p class="now-playing-artist">{{ music?.song?.artist ?? 'Unknown Artist' }}</p>
+            <div class="now-playing-progress-track">
+              <div class="now-playing-progress-fill" :style="{ width: `${musicProgressPct}%` }"></div>
+            </div>
+          </div>
+        </div>
+      </transition>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted, computed } from 'vue'
 
 const modules = ref([])
+const music = ref(null)
+const audioRef = ref(null)
+const musicProgressPct = ref(0)
+const introWindowSec = 6
+const outroWindowSec = 3
+let progressTimer = null
 let source = null
 
 function pct(count, maxVal) {
@@ -99,19 +119,79 @@ function textModuleStyle(mod) {
   }
 }
 
+function computeElapsedSec(snapshot, nowMs = Date.now()) {
+  if (!snapshot) return 0
+  const pausedBase = snapshot.pauseStartedAt ?? nowMs
+  const elapsedMs = snapshot.status === 'paused'
+    ? pausedBase - snapshot.startedAt - snapshot.pausedMsTotal
+    : nowMs - snapshot.startedAt - snapshot.pausedMsTotal
+  const safeElapsed = Math.max(0, elapsedMs / 1000)
+  return Math.min(safeElapsed, snapshot.song?.durationSec ?? safeElapsed)
+}
+
+function syncMusic(snapshot) {
+  music.value = snapshot
+  const audio = audioRef.value
+  if (!audio || !snapshot?.song?.audioPath) return
+
+  const incomingSeq = String(snapshot.sequence ?? 0)
+  const seqChanged = audio.dataset.sequence !== incomingSeq
+  const expectedSrc = snapshot.song.audioPath
+  const srcChanged = !audio.getAttribute('src') || audio.getAttribute('src') !== expectedSrc
+
+  if (seqChanged || srcChanged) {
+    audio.setAttribute('src', expectedSrc)
+    audio.dataset.sequence = incomingSeq
+    audio.load()
+  }
+
+  const targetTime = computeElapsedSec(snapshot)
+  if (Number.isFinite(targetTime) && Math.abs((audio.currentTime || 0) - targetTime) > 1) {
+    audio.currentTime = targetTime
+  }
+
+  if (snapshot.status === 'paused') {
+    audio.pause()
+  } else {
+    audio.play().catch((err) => {
+      console.warn('[overlay] Audio playback could not start automatically:', err)
+    })
+  }
+}
+
+function refreshMusicProgress() {
+  const audio = audioRef.value
+  const duration = music.value?.song?.durationSec ?? audio?.duration ?? 0
+  const current = Number.isFinite(audio?.currentTime) ? audio.currentTime : computeElapsedSec(music.value)
+  const pctVal = duration > 0 ? Math.min(100, Math.max(0, (current / duration) * 100)) : 0
+  musicProgressPct.value = pctVal
+}
+
+const shouldShowNowPlaying = computed(() => {
+  if (!music.value?.song?.durationSec) return false
+  const audio = audioRef.value
+  const currentTime = Number.isFinite(audio?.currentTime) ? audio.currentTime : computeElapsedSec(music.value)
+  const duration = music.value.song.durationSec
+  return currentTime <= introWindowSec || (duration - currentTime) <= outroWindowSec
+})
+
 onMounted(() => {
   source = new EventSource('/api/events')
   source.onmessage = (event) => {
     const data = JSON.parse(event.data)
     if (Array.isArray(data?.modules)) modules.value = data.modules
+    if (data?.music) syncMusic(data.music)
   }
   source.onerror = (event) => {
     console.warn('[overlay] SSE connection lost, will retry automatically.', event)
   }
+
+  progressTimer = setInterval(refreshMusicProgress, 250)
 })
 
 onUnmounted(() => {
   source?.close()
+  if (progressTimer) clearInterval(progressTimer)
 })
 </script>
 
@@ -168,5 +248,76 @@ onUnmounted(() => {
 
 .text-module {
   font-weight: 600;
+}
+
+.now-playing-popup {
+  position: absolute;
+  left: 2rem;
+  bottom: 2rem;
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  min-width: 320px;
+  max-width: 520px;
+  padding: 0.7rem 0.8rem;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(2px);
+}
+
+.now-playing-cover {
+  width: 58px;
+  height: 58px;
+  border-radius: 8px;
+  object-fit: cover;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.now-playing-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.now-playing-title {
+  margin: 0;
+  color: #ffffff;
+  font-weight: 700;
+  font-size: 1rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.now-playing-artist {
+  margin: 0.2rem 0 0.45rem;
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 0.84rem;
+}
+
+.now-playing-progress-track {
+  width: 100%;
+  height: 6px;
+  border-radius: 99px;
+  background: rgba(255, 255, 255, 0.2);
+  overflow: hidden;
+}
+
+.now-playing-progress-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: #82b1ff;
+  transition: width 0.2s linear;
+}
+
+.now-playing-pop-enter-active,
+.now-playing-pop-leave-active {
+  transition: opacity 0.35s ease, transform 0.35s ease;
+}
+
+.now-playing-pop-enter-from,
+.now-playing-pop-leave-to {
+  opacity: 0;
+  transform: translateY(14px);
 }
 </style>

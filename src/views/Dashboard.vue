@@ -43,6 +43,32 @@
       </div>
     </div>
 
+    <div class="music-panel">
+      <div class="music-header-row">
+        <h2>Background Music</h2>
+        <span class="music-status" :class="music?.status === 'paused' ? 'music-paused' : 'music-playing'">
+          {{ music?.status === 'paused' ? 'Paused' : 'Playing' }}
+        </span>
+      </div>
+
+      <div class="music-now-playing">
+        <p class="music-line"><strong>Now Playing:</strong> {{ music?.song?.title ?? 'Default Song' }}</p>
+        <p class="music-line"><strong>Artist:</strong> {{ music?.song?.artist ?? 'Unknown Artist' }}</p>
+      </div>
+
+      <div class="music-controls">
+        <button class="action-btn" :disabled="music?.status === 'paused'" @click="pauseMusic">Pause</button>
+        <button class="action-btn" :disabled="music?.status !== 'paused'" @click="resumeMusic">Resume</button>
+        <button class="action-btn action-activate" @click="skipMusic">Skip Song</button>
+      </div>
+
+      <p class="music-help">
+        Place songs and album art in
+        <code>/home/runner/work/StreamWebApp/StreamWebApp/public/Music/Album Name - Artist/</code>
+        so the app can load them as <code>/Music/...</code> assets.
+      </p>
+    </div>
+
     <div class="module-grid">
       <div v-for="mod in modules" :key="mod.id" class="module-card" :class="{ 'mod-is-hidden': mod.hidden }">
 
@@ -192,6 +218,7 @@ const modules = ref([])
 const steps   = reactive({})
 const setVals = reactive({})
 const editOpen = reactive({})
+const music = ref(null)
 
 const newModuleType = ref('progressBar')
 
@@ -273,10 +300,16 @@ onMounted(async () => {
     const { activeId: aid } = await fetchOverlayList()
     editingId.value = aid
     await fetchOverlayState(aid)
+    await fetchMusicState()
   } catch (err) {
     console.warn('[dashboard] Failed to load initial state:', err)
   }
 })
+
+async function fetchMusicState() {
+  const res = await fetch('/api/music')
+  music.value = await res.json()
+}
 
 async function selectOverlay(id) {
   if (editingId.value === id) return
@@ -409,6 +442,33 @@ async function removeModule(moduleId) {
   }
 }
 
+async function pauseMusic() {
+  try {
+    const res = await fetch('/api/music/pause', { method: 'POST' })
+    music.value = await res.json()
+  } catch (err) {
+    console.warn('[dashboard] Failed to pause music:', err)
+  }
+}
+
+async function resumeMusic() {
+  try {
+    const res = await fetch('/api/music/resume', { method: 'POST' })
+    music.value = await res.json()
+  } catch (err) {
+    console.warn('[dashboard] Failed to resume music:', err)
+  }
+}
+
+async function skipMusic() {
+  try {
+    const res = await fetch('/api/music/skip', { method: 'POST' })
+    music.value = await res.json()
+  } catch (err) {
+    console.warn('[dashboard] Failed to skip song:', err)
+  }
+}
+
 function adjustCount(mod, direction) {
   const step = steps[mod.id] ?? 1
   patchMod(mod.id, { count: mod.count + direction * step })
@@ -521,6 +581,81 @@ h1 {
   align-items: center;
   gap: 0.4rem;
   padding: 0.4rem 0 0;
+}
+
+.music-panel {
+  width: 100%;
+  max-width: 720px;
+  margin-bottom: 1.2rem;
+  border: 1px solid #2a2a2a;
+  border-radius: 10px;
+  padding: 0.8rem 0.9rem;
+  background: #151515;
+}
+
+.music-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  margin-bottom: 0.5rem;
+}
+
+.music-header-row h2 {
+  margin: 0;
+  font-size: 1rem;
+  color: #e0e0e0;
+}
+
+.music-status {
+  font-size: 0.72rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid transparent;
+}
+
+.music-playing {
+  color: #66bb6a;
+  border-color: #2e5c30;
+  background: #132014;
+}
+
+.music-paused {
+  color: #ffd54f;
+  border-color: #5c4a1a;
+  background: #231f10;
+}
+
+.music-now-playing {
+  margin-bottom: 0.55rem;
+}
+
+.music-line {
+  margin: 0.1rem 0;
+  font-size: 0.85rem;
+  color: #bdbdbd;
+}
+
+.music-controls {
+  display: flex;
+  gap: 0.45rem;
+  margin-bottom: 0.55rem;
+}
+
+.music-controls .action-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.music-help {
+  margin: 0;
+  color: #9e9e9e;
+  font-size: 0.75rem;
+  line-height: 1.45;
+}
+
+.music-help code {
+  color: #82b1ff;
 }
 
 .rename-input {

@@ -18,6 +18,15 @@ import {
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const DATA_FILE = join(__dirname, 'data.json')
+const DEFAULT_MUSIC_LIBRARY_PATH = '/Music'
+const DEFAULT_SONG = {
+  title: 'Default Song',
+  artist: 'Unknown Artist',
+  album: 'Default Album',
+  coverPath: `${DEFAULT_MUSIC_LIBRARY_PATH}/Default Album - Unknown Artist/cover.jpg`,
+  audioPath: `${DEFAULT_MUSIC_LIBRARY_PATH}/Default Album - Unknown Artist/Default Song.mp3`,
+  durationSec: 180,
+}
 
 function newId() { return randomUUID().slice(0, 8) }
 
@@ -140,6 +149,7 @@ function loadState() {
   try {
     const saved          = JSON.parse(readFileSync(DATA_FILE, 'utf8'))
     const moduleDefaults = mergeModuleDefaults(saved.moduleDefaults)
+    const music = mergeMusicState(saved.music)
     let overlays
     let activeId
 
@@ -155,11 +165,12 @@ function loadState() {
       activeId = 'default'
     }
 
-    return { activeId, moduleDefaults, overlays }
+    return { activeId, moduleDefaults, overlays, music }
   } catch {
     return {
       activeId:       'default',
       moduleDefaults: mergeModuleDefaults(null),
+      music: createInitialMusicState(),
       overlays: [{
         id:   'default',
         name: 'Default',
@@ -178,6 +189,84 @@ function saveState() {
   } catch (err) {
     console.error('[server] Failed to persist state:', err)
   }
+}
+
+function createInitialMusicState() {
+  return {
+    song: { ...DEFAULT_SONG },
+    playback: {
+      status: 'playing',
+      sequence: 1,
+      startedAt: Date.now(),
+      pauseStartedAt: null,
+      pausedMsTotal: 0,
+    },
+  }
+}
+
+function mergeMusicState(savedMusic) {
+  const mergedSong = {
+    title: typeof savedMusic?.song?.title === 'string' && savedMusic.song.title.trim() ? savedMusic.song.title : DEFAULT_SONG.title,
+    artist: typeof savedMusic?.song?.artist === 'string' && savedMusic.song.artist.trim() ? savedMusic.song.artist : DEFAULT_SONG.artist,
+    album: typeof savedMusic?.song?.album === 'string' && savedMusic.song.album.trim() ? savedMusic.song.album : DEFAULT_SONG.album,
+    coverPath: typeof savedMusic?.song?.coverPath === 'string' && savedMusic.song.coverPath.trim() ? savedMusic.song.coverPath : DEFAULT_SONG.coverPath,
+    audioPath: typeof savedMusic?.song?.audioPath === 'string' && savedMusic.song.audioPath.trim() ? savedMusic.song.audioPath : DEFAULT_SONG.audioPath,
+    durationSec: typeof savedMusic?.song?.durationSec === 'number' && savedMusic.song.durationSec > 0 ? savedMusic.song.durationSec : DEFAULT_SONG.durationSec,
+  }
+  const status = savedMusic?.playback?.status === 'paused' ? 'paused' : 'playing'
+  return {
+    song: mergedSong,
+    playback: {
+      status,
+      sequence: typeof savedMusic?.playback?.sequence === 'number' && savedMusic.playback.sequence > 0
+        ? savedMusic.playback.sequence
+        : 1,
+      startedAt: typeof savedMusic?.playback?.startedAt === 'number' ? savedMusic.playback.startedAt : Date.now(),
+      pauseStartedAt: status === 'paused' && typeof savedMusic?.playback?.pauseStartedAt === 'number'
+        ? savedMusic.playback.pauseStartedAt
+        : null,
+      pausedMsTotal: typeof savedMusic?.playback?.pausedMsTotal === 'number' && savedMusic.playback.pausedMsTotal >= 0
+        ? savedMusic.playback.pausedMsTotal
+        : 0,
+    },
+  }
+}
+
+function getMusicSnapshot() {
+  return {
+    song: { ...state.music.song },
+    status: state.music.playback.status,
+    sequence: state.music.playback.sequence,
+    startedAt: state.music.playback.startedAt,
+    pauseStartedAt: state.music.playback.pauseStartedAt,
+    pausedMsTotal: state.music.playback.pausedMsTotal,
+    serverTime: Date.now(),
+  }
+}
+
+function pauseMusic() {
+  if (state.music.playback.status === 'paused') return false
+  state.music.playback.status = 'paused'
+  state.music.playback.pauseStartedAt = Date.now()
+  return true
+}
+
+function resumeMusic() {
+  if (state.music.playback.status !== 'paused') return false
+  const now = Date.now()
+  const pausedFor = Math.max(0, now - (state.music.playback.pauseStartedAt ?? now))
+  state.music.playback.pausedMsTotal += pausedFor
+  state.music.playback.pauseStartedAt = null
+  state.music.playback.status = 'playing'
+  return true
+}
+
+function skipSong() {
+  state.music.playback.sequence += 1
+  state.music.playback.status = 'playing'
+  state.music.playback.startedAt = Date.now()
+  state.music.playback.pauseStartedAt = null
+  state.music.playback.pausedMsTotal = 0
 }
 
 const app = express()
@@ -202,6 +291,7 @@ function buildPayload() {
     activeId: state.activeId,
     overlays: state.overlays.map(o => ({ id: o.id, name: o.name })),
     modules:  active.modules,
+    music: getMusicSnapshot(),
   })
 }
 
@@ -341,6 +431,31 @@ app.patch('/api/overlays/:id/modules/:moduleId', (req, res) => {
 app.get('/api/state', (req, res) => {
   const overlay = (req.query.id ? getOverlay(req.query.id) : null) ?? getActive()
   res.json({ modules: overlay.modules })
+})
+
+app.get('/api/music', (req, res) => {
+  res.json(getMusicSnapshot())
+})
+
+app.post('/api/music/pause', (req, res) => {
+  pauseMusic()
+  saveState()
+  broadcast()
+  res.json(getMusicSnapshot())
+})
+
+app.post('/api/music/resume', (req, res) => {
+  resumeMusic()
+  saveState()
+  broadcast()
+  res.json(getMusicSnapshot())
+})
+
+app.post('/api/music/skip', (req, res) => {
+  skipSong()
+  saveState()
+  broadcast()
+  res.json(getMusicSnapshot())
 })
 
 app.listen(PORT, () => {
