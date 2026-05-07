@@ -1,18 +1,35 @@
 <template>
   <div class="overlay">
-    <div class="bars">
-      <div
-        v-for="mod in modules"
-        :key="mod.id"
-        class="bar-row"
-        :style="rowStyle(mod.bar)"
-      >
-        <span class="bar-label" :style="textStyle(mod.title)">{{ mod.label }}</span>
-        <div class="bar-track" :style="trackStyle(mod.bar)">
-          <div class="bar-fill" :style="{ width: pct(mod.count, mod.max), background: mod.color }"></div>
+    <div class="scene">
+      <template v-for="mod in modules" :key="mod.id">
+        <div
+          v-if="mod.type === 'progressBar'"
+          class="progress-module"
+          :style="progressContainerStyle(mod)"
+        >
+          <span class="bar-label" :style="textStyle(mod.title)">{{ mod.label }}</span>
+          <div class="bar-track" :style="trackStyle(mod.bar)">
+            <div class="bar-fill" :style="{ width: pct(mod.count, mod.max), background: mod.color }"></div>
+          </div>
+          <span class="bar-value" :style="textStyle(mod.value)">{{ mod.count }} / {{ mod.max }}</span>
         </div>
-        <span class="bar-value" :style="textStyle(mod.value)">{{ mod.count }} / {{ mod.max }}</span>
-      </div>
+
+        <img
+          v-else-if="mod.type === 'image'"
+          class="image-module"
+          :src="mod.src"
+          :alt="mod.alt || ''"
+          :style="imageStyle(mod)"
+        />
+
+        <div
+          v-else-if="mod.type === 'text'"
+          class="text-module"
+          :style="textModuleStyle(mod)"
+        >
+          {{ mod.text }}
+        </div>
+      </template>
     </div>
   </div>
 </template>
@@ -28,16 +45,56 @@ function pct(count, maxVal) {
   return `${Math.min(100, Math.max(0, (count / maxVal) * 100))}%`
 }
 
-function rowStyle(bar) {
-  return { transform: `translate(${bar.x}px, ${bar.y}px)` }
+function progressContainerStyle(mod) {
+  return {
+    position: 'absolute',
+    left: '0px',
+    top: '0px',
+    transform: `translate(${mod?.bar?.x ?? 0}px, ${mod?.bar?.y ?? 0}px)`,
+  }
 }
 
 function trackStyle(bar) {
-  return { transform: `scale(${bar.scaleX}, ${bar.scaleY})`, transformOrigin: 'left top' }
+  return {
+    transform: `scale(${bar?.scaleX ?? 1}, ${bar?.scaleY ?? 1})`,
+    transformOrigin: 'left top',
+  }
 }
 
 function textStyle(t) {
-  return { transform: `translate(${t.x}px, ${t.y}px)`, fontSize: `${t.fontSize}px` }
+  return {
+    transform: `translate(${t?.x ?? 0}px, ${t?.y ?? 0}px)`,
+    fontSize: `${t?.fontSize ?? 16}px`,
+  }
+}
+
+function imageStyle(mod) {
+  const tr = mod?.transform ?? {}
+  return {
+    position: 'absolute',
+    left: '0px',
+    top: '0px',
+    transform: `translate(${tr.x ?? 0}px, ${tr.y ?? 0}px) scale(${tr.scaleX ?? 1}, ${tr.scaleY ?? 1})`,
+    transformOrigin: 'left top',
+    opacity: `${mod?.opacity ?? 1}`,
+    maxWidth: 'none',
+    pointerEvents: 'none',
+  }
+}
+
+function textModuleStyle(mod) {
+  const tr = mod?.transform ?? {}
+  return {
+    position: 'absolute',
+    left: '0px',
+    top: '0px',
+    transform: `translate(${tr.x ?? 0}px, ${tr.y ?? 0}px) scale(${tr.scaleX ?? 1}, ${tr.scaleY ?? 1})`,
+    transformOrigin: 'left top',
+    fontSize: `${tr.fontSize ?? 32}px`,
+    color: mod?.color ?? '#ffffff',
+    whiteSpace: 'pre-wrap',
+    textShadow: '0 1px 4px rgba(0,0,0,0.7)',
+  }
 }
 
 onMounted(() => {
@@ -59,24 +116,21 @@ onUnmounted(() => {
 <style scoped>
 .overlay {
   min-height: 100vh;
-  display: flex;
-  align-items: center;
-  justify-content: center;
   background: transparent;
   font-family: sans-serif;
 }
 
-.bars {
-  display: flex;
-  flex-direction: column;
-  gap: 1.5rem;
-  width: 480px;
+.scene {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
 }
 
-.bar-row {
+.progress-module {
   display: flex;
   flex-direction: column;
   gap: 0.4rem;
+  width: 480px;
 }
 
 .bar-label {
@@ -104,5 +158,13 @@ onUnmounted(() => {
   color: rgba(255, 255, 255, 0.8);
   text-shadow: 0 1px 4px rgba(0, 0, 0, 0.7);
   text-align: right;
+}
+
+.image-module {
+  display: block;
+}
+
+.text-module {
+  font-weight: 600;
 }
 </style>

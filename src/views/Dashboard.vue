@@ -2,7 +2,6 @@
   <div class="dashboard">
     <h1>Dashboard</h1>
 
-    <!-- ── Overlay sub-navbar ─────────────────────────── -->
     <div class="overlay-nav">
       <div class="overlay-tabs">
         <button
@@ -44,130 +43,157 @@
       </div>
     </div>
 
-    <!-- ── Module cards ───────────────────────────────── -->
+    <div class="module-card">
+      <div class="module-header">
+        <span class="module-title">ProgressBar Defaults</span>
+      </div>
+      <section class="section">
+        <h2 class="section-title">Used when adding ProgressBar modules</h2>
+
+        <div class="row">
+          <label class="field-label">Label</label>
+          <input type="text" :value="progressDefaults.label" @change="patchDefaults({ label: $event.target.value })" />
+        </div>
+
+        <div class="row">
+          <label class="field-label">Goal</label>
+          <input type="number" min="1" :value="progressDefaults.max" @change="patchDefaults({ max: $event.target.valueAsNumber })" />
+        </div>
+
+        <div class="row">
+          <label class="field-label">Color</label>
+          <input type="color" :value="progressDefaults.color" @input="patchDefaults({ color: $event.target.value })" />
+        </div>
+
+        <p class="sub-title">Bar</p>
+        <div v-for="f in barFields" :key="'db'+f.key" class="row">
+          <label class="field-label">{{ f.label }}</label>
+          <input type="number" :step="f.step" :value="progressDefaults.bar[f.key]" @change="patchDefaults({ bar: { [f.key]: $event.target.valueAsNumber } })" />
+        </div>
+
+        <p class="sub-title">Title</p>
+        <div v-for="f in titleFields" :key="'dt'+f.key" class="row">
+          <label class="field-label">{{ f.label }}</label>
+          <input type="number" :step="f.step" :value="progressDefaults.title[f.key]" @change="patchDefaults({ title: { [f.key]: $event.target.valueAsNumber } })" />
+        </div>
+
+        <p class="sub-title">Value</p>
+        <div v-for="f in valueFields" :key="'dv'+f.key" class="row">
+          <label class="field-label">{{ f.label }}</label>
+          <input type="number" :step="f.step" :value="progressDefaults.value[f.key]" @change="patchDefaults({ value: { [f.key]: $event.target.valueAsNumber } })" />
+        </div>
+      </section>
+    </div>
+
     <div v-for="mod in modules" :key="mod.id" class="module-card">
       <div class="module-header">
-        <span class="module-title">{{ mod.label }}</span>
-        <button
-          v-if="modules.length > 1"
-          class="action-btn action-delete"
-          @click="removeModule(mod.id)"
-        >Remove</button>
+        <span class="module-title">{{ moduleTitle(mod) }}</span>
+        <button v-if="modules.length > 1" class="action-btn action-delete" @click="removeModule(mod.id)">Remove</button>
       </div>
 
-      <!-- Counts -->
-      <section class="section">
+      <section v-if="mod.type === 'progressBar'" class="section">
         <h2 class="section-title">Counts</h2>
         <p class="count">{{ mod.count }}</p>
 
         <div class="row">
           <button @click="adjustCount(mod, -1)">−</button>
-          <input
-            type="number"
-            class="step-input"
-            :value="steps[mod.id] ?? 1"
-            @change="setStepLocal(mod.id, $event.target.value)"
-            title="Step size"
-          />
+          <input type="number" class="step-input" :value="steps[mod.id] ?? 1" @change="setStepLocal(mod.id, $event.target.value)" title="Step size" />
           <button @click="adjustCount(mod, +1)">+</button>
         </div>
 
         <div class="row">
-          <input
-            type="number"
-            class="set-input"
-            placeholder="Set value…"
-            :value="setVals[mod.id] ?? ''"
-            @input="updateSetVal(mod.id, $event.target.value)"
-            @keyup.enter="setCount(mod)"
-          />
+          <input type="number" class="set-input" placeholder="Set value…" :value="setVals[mod.id] ?? ''" @input="updateSetVal(mod.id, $event.target.value)" @keyup.enter="setCount(mod)" />
           <button @click="setCount(mod)">Set</button>
           <button class="reset" @click="patchMod(mod.id, { count: 0 })">Reset</button>
         </div>
 
         <div class="row">
           <label class="field-label">Goal</label>
-          <input
-            type="number"
-            min="1"
-            :value="mod.max"
-            @change="patchMod(mod.id, { max: $event.target.valueAsNumber })"
-          />
-          <button class="reset-sm" @click="patchMod(mod.id, { max: 100 })">Reset</button>
+          <input type="number" min="1" :value="mod.max" @change="patchMod(mod.id, { max: $event.target.valueAsNumber })" />
+          <button class="reset-sm" @click="patchMod(mod.id, { max: progressDefaults.max || 100 })">Reset</button>
         </div>
-      </section>
-
-      <!-- Appearance -->
-      <section class="section">
-        <h2 class="section-title">Appearance</h2>
 
         <div class="row">
           <label class="field-label">Label</label>
-          <input
-            type="text"
-            class="text-input"
-            :value="mod.label"
-            @change="patchMod(mod.id, { label: $event.target.value })"
-          />
-          <button class="reset-sm" @click="patchMod(mod.id, { label: 'Counter' })">Reset</button>
+          <input type="text" :value="mod.label" @change="patchMod(mod.id, { label: $event.target.value })" />
         </div>
 
         <div class="row">
           <label class="field-label">Color</label>
-          <input
-            type="color"
-            class="color-input"
-            :value="mod.color"
-            @input="patchMod(mod.id, { color: $event.target.value })"
-          />
-          <button class="reset-sm" @click="patchMod(mod.id, { color: '#82b1ff' })">Reset</button>
+          <input type="color" :value="mod.color" @input="patchMod(mod.id, { color: $event.target.value })" />
         </div>
-      </section>
-
-      <!-- Layout -->
-      <section class="section">
-        <h2 class="section-title">Layout</h2>
 
         <p class="sub-title">Bar</p>
-        <div v-for="f in barFields" :key="'b' + f.key" class="row">
+        <div v-for="f in barFields" :key="mod.id+'b'+f.key" class="row">
           <label class="field-label">{{ f.label }}</label>
-          <input
-            type="number"
-            :step="f.step"
-            :value="mod.bar[f.key]"
-            @change="patchMod(mod.id, { bar: { [f.key]: $event.target.valueAsNumber } })"
-          />
-          <button class="reset-sm" @click="patchMod(mod.id, { bar: { [f.key]: f.def } })">Reset</button>
+          <input type="number" :step="f.step" :value="mod.bar[f.key]" @change="patchMod(mod.id, { bar: { [f.key]: $event.target.valueAsNumber } })" />
         </div>
 
         <p class="sub-title">Title</p>
-        <div v-for="f in titleFields" :key="'t' + f.key" class="row">
+        <div v-for="f in titleFields" :key="mod.id+'t'+f.key" class="row">
           <label class="field-label">{{ f.label }}</label>
-          <input
-            type="number"
-            :step="f.step"
-            :value="mod.title[f.key]"
-            @change="patchMod(mod.id, { title: { [f.key]: $event.target.valueAsNumber } })"
-          />
-          <button class="reset-sm" @click="patchMod(mod.id, { title: { [f.key]: f.def } })">Reset</button>
+          <input type="number" :step="f.step" :value="mod.title[f.key]" @change="patchMod(mod.id, { title: { [f.key]: $event.target.valueAsNumber } })" />
         </div>
 
         <p class="sub-title">Value</p>
-        <div v-for="f in valueFields" :key="'v' + f.key" class="row">
+        <div v-for="f in valueFields" :key="mod.id+'v'+f.key" class="row">
           <label class="field-label">{{ f.label }}</label>
-          <input
-            type="number"
-            :step="f.step"
-            :value="mod.value[f.key]"
-            @change="patchMod(mod.id, { value: { [f.key]: $event.target.valueAsNumber } })"
-          />
-          <button class="reset-sm" @click="patchMod(mod.id, { value: { [f.key]: f.def } })">Reset</button>
+          <input type="number" :step="f.step" :value="mod.value[f.key]" @change="patchMod(mod.id, { value: { [f.key]: $event.target.valueAsNumber } })" />
+        </div>
+      </section>
+
+      <section v-else-if="mod.type === 'image'" class="section">
+        <h2 class="section-title">Image</h2>
+
+        <div class="row">
+          <label class="field-label">Image Path</label>
+          <input type="text" class="wide-input" :value="mod.src" @change="patchMod(mod.id, { src: $event.target.value })" />
+        </div>
+
+        <div class="row">
+          <label class="field-label">Alt Text</label>
+          <input type="text" class="wide-input" :value="mod.alt" @change="patchMod(mod.id, { alt: $event.target.value })" />
+        </div>
+
+        <div class="row">
+          <label class="field-label">Opacity</label>
+          <input type="number" step="0.1" min="0" max="1" :value="mod.opacity" @change="patchMod(mod.id, { opacity: $event.target.valueAsNumber })" />
+        </div>
+
+        <p class="sub-title">Transform</p>
+        <div v-for="f in transformFields" :key="mod.id+'i'+f.key" class="row">
+          <label class="field-label">{{ f.label }}</label>
+          <input type="number" :step="f.step" :value="mod.transform[f.key]" @change="patchMod(mod.id, { transform: { [f.key]: $event.target.valueAsNumber } })" />
+        </div>
+      </section>
+
+      <section v-else-if="mod.type === 'text'" class="section">
+        <h2 class="section-title">Text</h2>
+
+        <div class="row">
+          <label class="field-label">Text</label>
+          <input type="text" class="wide-input" :value="mod.text" @change="patchMod(mod.id, { text: $event.target.value })" />
+        </div>
+
+        <div class="row">
+          <label class="field-label">Color</label>
+          <input type="color" :value="mod.color" @input="patchMod(mod.id, { color: $event.target.value })" />
+        </div>
+
+        <p class="sub-title">Transform</p>
+        <div v-for="f in textTransformFields" :key="mod.id+'x'+f.key" class="row">
+          <label class="field-label">{{ f.label }}</label>
+          <input type="number" :step="f.step" :value="mod.transform[f.key]" @change="patchMod(mod.id, { transform: { [f.key]: $event.target.valueAsNumber } })" />
         </div>
       </section>
     </div>
 
-    <!-- ── Add module ──────────────────────────────────── -->
     <div class="add-module-row">
+      <select v-model="newModuleType" class="module-type-select">
+        <option value="progressBar">ProgressBar</option>
+        <option value="image">Image</option>
+        <option value="text">Text</option>
+      </select>
       <button class="add-module-btn" @click="addModule">+ Add Module</button>
     </div>
 
@@ -178,7 +204,6 @@
 <script setup>
 import { ref, reactive, onMounted, nextTick } from 'vue'
 
-// ── Overlay management ────────────────────────────────────────
 const overlayList    = ref([])
 const activeId       = ref('')
 const editingId      = ref('')
@@ -186,46 +211,97 @@ const renaming       = ref(false)
 const renameVal      = ref('')
 const renameInputRef = ref(null)
 
-// ── Module state ──────────────────────────────────────────────
 const modules = ref([])
-const steps   = reactive({})   // moduleId → step number
-const setVals = reactive({})   // moduleId → string input
+const steps   = reactive({})
+const setVals = reactive({})
 
-// ── Field descriptors ─────────────────────────────────────────
+const newModuleType = ref('progressBar')
+const progressDefaults = ref({
+  label: 'Counter',
+  max: 100,
+  color: '#82b1ff',
+  bar: { x: 0, y: 0, scaleX: 1, scaleY: 1 },
+  title: { x: 0, y: 0, fontSize: 16 },
+  value: { x: 0, y: 0, fontSize: 14 },
+})
+
 const barFields = [
-  { key: 'x',      label: 'X Offset', step: 1,   def: 0 },
-  { key: 'y',      label: 'Y Offset', step: 1,   def: 0 },
-  { key: 'scaleX', label: 'Scale X',  step: 0.1, def: 1 },
-  { key: 'scaleY', label: 'Scale Y',  step: 0.1, def: 1 },
+  { key: 'x',      label: 'X Offset', step: 1 },
+  { key: 'y',      label: 'Y Offset', step: 1 },
+  { key: 'scaleX', label: 'Scale X',  step: 0.1 },
+  { key: 'scaleY', label: 'Scale Y',  step: 0.1 },
 ]
 const titleFields = [
-  { key: 'x',        label: 'X Offset',  step: 1, def: 0  },
-  { key: 'y',        label: 'Y Offset',  step: 1, def: 0  },
-  { key: 'fontSize', label: 'Font Size', step: 1, def: 16 },
+  { key: 'x',        label: 'X Offset',  step: 1 },
+  { key: 'y',        label: 'Y Offset',  step: 1 },
+  { key: 'fontSize', label: 'Font Size', step: 1 },
 ]
 const valueFields = [
-  { key: 'x',        label: 'X Offset',  step: 1, def: 0  },
-  { key: 'y',        label: 'Y Offset',  step: 1, def: 0  },
-  { key: 'fontSize', label: 'Font Size', step: 1, def: 14 },
+  { key: 'x',        label: 'X Offset',  step: 1 },
+  { key: 'y',        label: 'Y Offset',  step: 1 },
+  { key: 'fontSize', label: 'Font Size', step: 1 },
+]
+const transformFields = [
+  { key: 'x',      label: 'X Offset', step: 1 },
+  { key: 'y',      label: 'Y Offset', step: 1 },
+  { key: 'scaleX', label: 'Scale X',  step: 0.1 },
+  { key: 'scaleY', label: 'Scale Y',  step: 0.1 },
+]
+const textTransformFields = [
+  { key: 'x',        label: 'X Offset', step: 1 },
+  { key: 'y',        label: 'Y Offset', step: 1 },
+  { key: 'scaleX',   label: 'Scale X',  step: 0.1 },
+  { key: 'scaleY',   label: 'Scale Y',  step: 0.1 },
+  { key: 'fontSize', label: 'Font Size', step: 1 },
 ]
 
-// ── Module helpers ────────────────────────────────────────────
+function moduleTitle(mod) {
+  if (mod.type === 'image') return 'Image Module'
+  if (mod.type === 'text') return 'Text Module'
+  return mod.label || 'ProgressBar Module'
+}
+
 function applyModules(newModules) {
   modules.value = newModules
-  // Reset per-module local UI state
-  for (const key of Object.keys(steps))   delete steps[key]
+  for (const key of Object.keys(steps)) delete steps[key]
   for (const key of Object.keys(setVals)) delete setVals[key]
   for (const mod of newModules) {
-    steps[mod.id]   = 1
+    steps[mod.id] = 1
     setVals[mod.id] = ''
   }
 }
 
-// ── State fetch helpers ───────────────────────────────────────
 async function fetchOverlayState(id) {
   const res  = await fetch(`/api/state?id=${encodeURIComponent(id)}`)
   const data = await res.json()
   applyModules(data.modules ?? [])
+}
+
+async function fetchDefaults() {
+  const res = await fetch('/api/defaults')
+  const data = await res.json()
+  if (data?.progressBar) progressDefaults.value = data.progressBar
+}
+
+async function patchDefaults(patch) {
+  for (const [k, v] of Object.entries(patch)) {
+    if (v && typeof v === 'object' && !Array.isArray(v)) {
+      progressDefaults.value[k] = { ...progressDefaults.value[k], ...v }
+    } else {
+      progressDefaults.value[k] = v
+    }
+  }
+  try {
+    const res = await fetch('/api/defaults', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ progressBar: patch }),
+    })
+    const data = await res.json()
+    if (data?.progressBar) progressDefaults.value = data.progressBar
+  } catch (err) {
+    console.warn('[dashboard] Failed to patch defaults:', err)
+  }
 }
 
 async function fetchOverlayList() {
@@ -240,13 +316,12 @@ onMounted(async () => {
   try {
     const { activeId: aid } = await fetchOverlayList()
     editingId.value = aid
-    await fetchOverlayState(aid)
+    await Promise.all([fetchOverlayState(aid), fetchDefaults()])
   } catch (err) {
     console.warn('[dashboard] Failed to load initial state:', err)
   }
 })
 
-// ── Overlay management actions ────────────────────────────────
 async function selectOverlay(id) {
   if (editingId.value === id) return
   editingId.value = id
@@ -325,28 +400,21 @@ async function confirmDelete() {
   }
 }
 
-// ── Module actions ────────────────────────────────────────────
 async function patchMod(moduleId, patch) {
-  // Optimistic update
   const mod = modules.value.find(m => m.id === moduleId)
   if (mod) {
     for (const [key, val] of Object.entries(patch)) {
-      if (val !== null && typeof val === 'object' && !Array.isArray(val)) {
-        mod[key] = { ...mod[key], ...val }
-      } else {
-        mod[key] = val
-      }
+      if (val !== null && typeof val === 'object' && !Array.isArray(val)) mod[key] = { ...mod[key], ...val }
+      else mod[key] = val
     }
   }
+
   try {
-    const res = await fetch(
-      `/api/overlays/${encodeURIComponent(editingId.value)}/modules/${encodeURIComponent(moduleId)}`,
-      {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(patch),
-      }
-    )
+    const res = await fetch(`/api/overlays/${encodeURIComponent(editingId.value)}/modules/${encodeURIComponent(moduleId)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(patch),
+    })
     const updated = await res.json()
     const idx = modules.value.findIndex(m => m.id === moduleId)
     if (idx !== -1) modules.value[idx] = updated
@@ -358,13 +426,14 @@ async function patchMod(moduleId, patch) {
 
 async function addModule() {
   try {
-    const res = await fetch(
-      `/api/overlays/${encodeURIComponent(editingId.value)}/modules`,
-      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) }
-    )
+    const res = await fetch(`/api/overlays/${encodeURIComponent(editingId.value)}/modules`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: newModuleType.value }),
+    })
     const mod = await res.json()
     modules.value.push(mod)
-    steps[mod.id]   = 1
+    steps[mod.id] = 1
     setVals[mod.id] = ''
   } catch (err) {
     console.warn('[dashboard] Failed to add module:', err)
@@ -373,12 +442,9 @@ async function addModule() {
 
 async function removeModule(moduleId) {
   const mod = modules.value.find(m => m.id === moduleId)
-  if (!window.confirm(`Remove module "${mod?.label ?? moduleId}"? This cannot be undone.`)) return
+  if (!window.confirm(`Remove module "${moduleTitle(mod ?? {})}"? This cannot be undone.`)) return
   try {
-    const res  = await fetch(
-      `/api/overlays/${encodeURIComponent(editingId.value)}/modules/${encodeURIComponent(moduleId)}`,
-      { method: 'DELETE' }
-    )
+    const res  = await fetch(`/api/overlays/${encodeURIComponent(editingId.value)}/modules/${encodeURIComponent(moduleId)}`, { method: 'DELETE' })
     const data = await res.json()
     applyModules(data.modules)
   } catch (err) {
@@ -386,7 +452,6 @@ async function removeModule(moduleId) {
   }
 }
 
-// ── Counter actions ───────────────────────────────────────────
 function adjustCount(mod, direction) {
   const step = steps[mod.id] ?? 1
   patchMod(mod.id, { count: mod.count + direction * step })
@@ -430,7 +495,6 @@ h1 {
   color: #ffffff;
 }
 
-/* ── Overlay sub-navbar ───────────────────────── */
 .overlay-nav {
   width: 100%;
   max-width: 640px;
@@ -506,7 +570,6 @@ h1 {
   width: 12rem;
 }
 
-/* ── Module cards ────────────────────────────── */
 .module-card {
   width: 100%;
   max-width: 640px;
@@ -532,13 +595,22 @@ h1 {
   letter-spacing: 0.08em;
 }
 
-/* ── Add module ──────────────────────────────── */
 .add-module-row {
   width: 100%;
   max-width: 640px;
   display: flex;
+  gap: 0.6rem;
   justify-content: center;
   margin-bottom: 0.5rem;
+}
+
+.module-type-select {
+  background: #1e1e1e;
+  color: #e0e0e0;
+  border: 1px solid #424242;
+  border-radius: 6px;
+  padding: 0.45rem 0.6rem;
+  font-size: 0.9rem;
 }
 
 .add-module-btn {
@@ -553,7 +625,6 @@ h1 {
 }
 .add-module-btn:hover { background: #1a2e1c; }
 
-/* ── Sections ────────────────────────────────── */
 .section {
   width: 100%;
   border-top: 1px solid #2a2a2a;
@@ -588,7 +659,7 @@ h1 {
 .field-label {
   font-size: 0.85rem;
   color: #9e9e9e;
-  width: 5.5rem;
+  width: 5.9rem;
   flex-shrink: 0;
 }
 
@@ -600,13 +671,18 @@ input[type='text'] {
   border-radius: 6px;
   padding: 0.35rem 0.65rem;
   font-size: 0.9rem;
-  width: 7rem;
+  width: 8rem;
   text-align: center;
 }
 
 input[type='text'] {
   text-align: left;
-  width: 9rem;
+  width: 12rem;
+}
+
+.wide-input {
+  flex: 1;
+  min-width: 0;
 }
 
 input[type='color'] {
@@ -643,7 +719,7 @@ button {
   border: 1px solid #424242;
   border-radius: 6px;
   padding: 0.5rem 1.2rem;
-  font-size: 1.3rem;
+  font-size: 1.1rem;
   cursor: pointer;
   transition: background-color 0.15s;
 }

@@ -6,6 +6,7 @@ import Settings from '../views/Settings.vue'
 const routes = [
   { path: '/', redirect: '/dashboard' },
   { path: '/dashboard', component: Dashboard },
+  { path: '/modules', component: Dashboard },
   { path: '/overlay', component: Overlay },
   { path: '/settings', component: Settings },
 ]
