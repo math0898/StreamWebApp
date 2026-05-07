@@ -325,11 +325,11 @@ app.delete('/api/overlays/:id/modules/:moduleId', (req, res) => {
 app.patch('/api/overlays/:id/modules/:moduleId', (req, res) => {
   const overlay = getOverlay(req.params.id)
   if (!overlay) return res.status(404).json({ error: 'Overlay not found' })
-  const mod = overlay.modules.find(m => m.id === req.params.moduleId)
-  if (!mod) return res.status(404).json({ error: 'Module not found' })
-  const nextMod = patchOverlayModule(mod, req.body ?? {})
   const modIdx = overlay.modules.findIndex(m => m.id === req.params.moduleId)
-  if (modIdx !== -1) overlay.modules[modIdx] = nextMod
+  if (modIdx === -1) return res.status(404).json({ error: 'Module not found' })
+  const mod = overlay.modules[modIdx]
+  const nextMod = patchOverlayModule(mod, req.body ?? {})
+  overlay.modules[modIdx] = nextMod
   saveState()
   // broadcast when editing the active overlay, or whenever `hidden` changes
   // so that visibility toggles are always reflected on /overlay immediately
