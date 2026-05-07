@@ -19,13 +19,14 @@ import {
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const DATA_FILE = join(__dirname, 'data.json')
 const DEFAULT_MUSIC_LIBRARY_PATH = '/Music'
+const DEFAULT_SONG_DURATION_SEC = 180
 const DEFAULT_SONG = {
   title: 'Default Song',
   artist: 'Unknown Artist',
   album: 'Default Album',
   coverPath: `${DEFAULT_MUSIC_LIBRARY_PATH}/Default Album - Unknown Artist/cover.jpg`,
   audioPath: `${DEFAULT_MUSIC_LIBRARY_PATH}/Default Album - Unknown Artist/Default Song.mp3`,
-  durationSec: 180,
+  durationSec: DEFAULT_SONG_DURATION_SEC,
 }
 
 function newId() { return randomUUID().slice(0, 8) }

@@ -57,8 +57,9 @@ const modules = ref([])
 const music = ref(null)
 const audioRef = ref(null)
 const musicProgressPct = ref(0)
-const introWindowSec = 6
-const outroWindowSec = 3
+const INTRO_POPUP_WINDOW_SEC = 6
+const OUTRO_POPUP_WINDOW_SEC = 3
+const PROGRESS_UPDATE_INTERVAL_MS = 250
 let progressTimer = null
 let source = null
 
@@ -172,7 +173,7 @@ const shouldShowNowPlaying = computed(() => {
   const audio = audioRef.value
   const currentTime = Number.isFinite(audio?.currentTime) ? audio.currentTime : computeElapsedSec(music.value)
   const duration = music.value.song.durationSec
-  return currentTime <= introWindowSec || (duration - currentTime) <= outroWindowSec
+  return currentTime <= INTRO_POPUP_WINDOW_SEC || (duration - currentTime) <= OUTRO_POPUP_WINDOW_SEC
 })
 
 onMounted(() => {
@@ -186,7 +187,7 @@ onMounted(() => {
     console.warn('[overlay] SSE connection lost, will retry automatically.', event)
   }
 
-  progressTimer = setInterval(refreshMusicProgress, 250)
+  progressTimer = setInterval(refreshMusicProgress, PROGRESS_UPDATE_INTERVAL_MS)
 })
 
 onUnmounted(() => {

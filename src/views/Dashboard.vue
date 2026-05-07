@@ -64,7 +64,7 @@
 
       <p class="music-help">
         Place songs and album art in
-        <code>/home/runner/work/StreamWebApp/StreamWebApp/public/Music/Album Name - Artist/</code>
+        <code>public/Music/Album Name - Artist/</code>
         so the app can load them as <code>/Music/...</code> assets.
       </p>
     </div>

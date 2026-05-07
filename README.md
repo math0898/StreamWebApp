@@ -5,7 +5,7 @@ A basic localhost stream web app that pulls data from a dashboard page to displa
 
 Place music assets under:
 
-`/home/runner/work/StreamWebApp/StreamWebApp/public/Music/Album Name - Artist/`
+`public/Music/Album Name - Artist/`
 
 Each album folder should contain:
 - `cover.jpg` (album art shown in now-playing popup)
