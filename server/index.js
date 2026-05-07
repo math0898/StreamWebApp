@@ -34,6 +34,7 @@ const MAX_RECENTLY_PLAYED = 200
 const IMPORT_RATE_LIMIT_WINDOW_MS = 60_000
 const IMPORT_RATE_LIMIT_MAX_REQUESTS = 8
 const DOT_CHAR_CODE = '.'.charCodeAt(0)
+const ALBUM_FOLDER_SEPARATOR = ' - '
 const AUDIO_EXTENSIONS = new Set(['.mp3', '.ogg', '.wav'])
 const IMAGE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.webp'])
 const AUDIO_MIME_TYPES = new Set(['audio/mpeg', 'audio/ogg', 'audio/wav', 'audio/x-wav'])
@@ -340,11 +341,11 @@ function toWebPath(absPath) {
 }
 
 function parseAlbumFolderName(folderName) {
-  const idx = folderName.lastIndexOf(' - ')
+  const idx = folderName.lastIndexOf(ALBUM_FOLDER_SEPARATOR)
   if (idx < 0) return { album: folderName, artist: 'Unknown Artist' }
   return {
     album: folderName.slice(0, idx).trim() || folderName,
-    artist: folderName.slice(idx + 3).trim() || 'Unknown Artist',
+    artist: folderName.slice(idx + ALBUM_FOLDER_SEPARATOR.length).trim() || 'Unknown Artist',
   }
 }
 
@@ -1319,7 +1320,7 @@ app.post('/api/music/import', musicImportLimiter, (req, res) => {
   const artist = sanitizeSegment(artistRaw, 'Unknown Artist')
   const album = sanitizeSegment(albumRaw, 'Unknown Album')
   const trackTitle = sanitizeSegment(trackNameRaw, 'Unknown Song')
-  const albumFolder = `${album} - ${artist}`
+  const albumFolder = `${album}${ALBUM_FOLDER_SEPARATOR}${artist}`
   const albumDir = join(MUSIC_DIR, albumFolder)
   if (!existsSync(albumDir)) mkdirSync(albumDir, { recursive: true })
 
