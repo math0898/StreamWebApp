@@ -50,14 +50,96 @@
       <p class="muted" v-if="tracks.length === 0">No tracks loaded.</p>
       <div class="track-grid">
         <article v-for="track in tracks" :key="track.id" class="track-card">
-          <img :src="track.coverPath" :alt="`Album art for ${track.album ?? track.title} by ${track.artist ?? 'Unknown Artist'}`" class="cover" />
-          <div class="track-info">
+          <img :src="track.coverPath" :alt="`Album art for ${track.title} by ${track.artist ?? 'Unknown Artist'}`" class="cover" />
+          <div class="track-info metadata-track">
             <p class="track-title">{{ track.title }}</p>
             <p class="muted small">{{ track.artist }}</p>
             <p class="muted small">{{ track.album }}</p>
             <button class="action-btn play-btn" @click="playTrack(track.id)">Set Now Playing</button>
+            <div class="attr-editor">
+              <label class="attr-row">
+                <span>Liked ({{ trackDraftValue(track.id, likedAttributeId).toFixed(2) }})</span>
+                <input
+                  type="range"
+                  min="-1"
+                  max="1"
+                  step="0.01"
+                  :value="trackDraftValue(track.id, likedAttributeId)"
+                  @input="setTrackDraftValue(track.id, likedAttributeId, Number($event.target.value))"
+                />
+              </label>
+              <label v-for="definition in customAttributeDefinitions" :key="definition.id" class="attr-row">
+                <span>{{ definition.name }} ({{ trackDraftValue(track.id, definition.id).toFixed(2) }})</span>
+                <input
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.01"
+                  :value="trackDraftValue(track.id, definition.id)"
+                  @input="setTrackDraftValue(track.id, definition.id, Number($event.target.value))"
+                />
+              </label>
+            </div>
+            <div class="styles-editor">
+              <p class="muted small">Styles</p>
+              <div class="style-list">
+                <label
+                  v-for="style in styleOptionsForTrack(track.id)"
+                  :key="`${track.id}-${style}`"
+                  class="style-chip"
+                >
+                  <input
+                    type="checkbox"
+                    :checked="trackDraftHasStyle(track.id, style)"
+                    @change="toggleTrackStyle(track.id, style, $event.target.checked)"
+                  />
+                  <span>{{ style }}</span>
+                </label>
+              </div>
+              <div class="custom-style-row">
+                <input
+                  v-model="trackStyleDrafts[track.id]"
+                  type="text"
+                  placeholder="Add custom style"
+                  @keydown.enter.prevent="addCustomTrackStyle(track.id)"
+                />
+                <button class="action-btn" @click="addCustomTrackStyle(track.id)">Add</button>
+              </div>
+            </div>
+            <button class="action-btn" :disabled="savingTrackId === track.id" @click="saveTrackMeta(track.id)">
+              {{ savingTrackId === track.id ? 'Saving…' : 'Save Track Metadata' }}
+            </button>
           </div>
         </article>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-header">
+        <h2>Track Attributes</h2>
+        <button class="action-btn" :disabled="savingAttributes" @click="saveAttributes">
+          {{ savingAttributes ? 'Saving…' : 'Save Attributes' }}
+        </button>
+      </div>
+      <p class="muted small">Liked is always present and decays toward 0 over time. Custom attributes are 0-1 sliders.</p>
+      <div class="attribute-list">
+        <div class="attribute-row fixed">
+          <span class="attribute-label">Liked</span>
+          <span class="muted small">Range -1 to 1</span>
+        </div>
+        <div v-for="(attribute, idx) in editableCustomAttributes" :key="attribute.id" class="attribute-row">
+          <input v-model="editableCustomAttributes[idx].name" type="text" />
+          <button class="action-btn" @click="removeCustomAttribute(attribute.id)">Remove</button>
+        </div>
+      </div>
+      <div class="custom-style-row">
+        <input
+          v-model="newAttributeName"
+          type="text"
+          placeholder="New attribute name"
+          @keydown.enter.prevent="addCustomAttribute"
+        />
+        <button class="action-btn" @click="addCustomAttribute">Add Attribute</button>
       </div>
     </section>
 
@@ -134,10 +216,18 @@ const overlays = ref([])
 const activeOverlayId = ref('')
 const selectedOverlayId = ref('')
 const overlayAlbumRules = ref({})
+const attributeDefinitions = ref([])
+const styleOptions = ref([])
+const editableCustomAttributes = ref([])
+const trackMetaDrafts = ref({})
+const trackStyleDrafts = reactive({})
 const reloading = ref(false)
 const importing = ref(false)
 const savingRules = ref(false)
+const savingAttributes = ref(false)
+const savingTrackId = ref('')
 const formMessage = ref('')
+const newAttributeName = ref('')
 
 const form = reactive({
   artist: '',
@@ -157,6 +247,20 @@ const activeOverlayName = computed(() => {
   const active = overlays.value.find(overlay => overlay.id === activeOverlayId.value)
   return active?.name ?? 'Unknown'
 })
+const LIKED_ATTRIBUTE_ID = 'liked'
+const likedAttributeId = LIKED_ATTRIBUTE_ID
+const customAttributeDefinitions = computed(() =>
+  attributeDefinitions.value.filter(definition => definition.type === 'custom')
+)
+
+function normalizeAttributeDefinition(definition) {
+  if (definition?.id === LIKED_ATTRIBUTE_ID || definition?.type === 'liked') {
+    return { id: LIKED_ATTRIBUTE_ID, name: 'Liked', type: 'liked' }
+  }
+  const id = typeof definition?.id === 'string' && definition.id.trim() ? definition.id.trim() : `attr-${Date.now()}-${Math.random()}`
+  const name = typeof definition?.name === 'string' && definition.name.trim() ? definition.name.trim() : 'Attribute'
+  return { id, name, type: 'custom' }
+}
 
 function normalizeRule(rule) {
   const toList = (values) => {
@@ -182,6 +286,23 @@ function applyMusicSnapshot(data) {
     nextRules[overlay.id] = normalizeRule(data.overlayAlbumRules?.[overlay.id])
   }
   overlayAlbumRules.value = nextRules
+  const incomingDefinitions = Array.isArray(data.attributeDefinitions)
+    ? data.attributeDefinitions.map(normalizeAttributeDefinition)
+    : [normalizeAttributeDefinition({ id: LIKED_ATTRIBUTE_ID, type: 'liked' })]
+  attributeDefinitions.value = incomingDefinitions
+  editableCustomAttributes.value = incomingDefinitions
+    .filter(definition => definition.type === 'custom')
+    .map(definition => ({ id: definition.id, name: definition.name }))
+  styleOptions.value = Array.isArray(data.styleOptions) ? [...new Set(data.styleOptions)] : []
+  const nextDrafts = {}
+  for (const track of tracks.value) {
+    nextDrafts[track.id] = {
+      attributes: { ...(track.attributes ?? {}) },
+      styles: Array.isArray(track.styles) ? [...new Set(track.styles)] : [],
+    }
+    if (typeof trackStyleDrafts[track.id] !== 'string') trackStyleDrafts[track.id] = ''
+  }
+  trackMetaDrafts.value = nextDrafts
   const hasSelected = overlays.value.some(overlay => overlay.id === selectedOverlayId.value)
   if (!hasSelected) {
     selectedOverlayId.value = activeOverlayId.value || overlays.value[0]?.id || ''
@@ -326,6 +447,118 @@ async function saveOverlayRules() {
   }
 }
 
+function addCustomAttribute() {
+  const name = newAttributeName.value.trim()
+  if (!name) return
+  editableCustomAttributes.value.push({
+    id: `attr-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    name,
+  })
+  newAttributeName.value = ''
+}
+
+function removeCustomAttribute(attributeId) {
+  editableCustomAttributes.value = editableCustomAttributes.value.filter(attribute => attribute.id !== attributeId)
+}
+
+async function saveAttributes() {
+  savingAttributes.value = true
+  formMessage.value = ''
+  try {
+    const payload = editableCustomAttributes.value
+      .map(attribute => ({ id: attribute.id, name: attribute.name?.trim() || '' }))
+      .filter(attribute => attribute.name)
+    const res = await fetch('/api/music/attributes', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ attributes: payload }),
+    })
+    const data = await res.json()
+    if (!res.ok) throw new Error(data?.error ?? 'Unable to save attributes')
+    applyMusicSnapshot(data)
+  } catch (err) {
+    formMessage.value = `Save attributes failed: ${err.message}`
+  } finally {
+    savingAttributes.value = false
+  }
+}
+
+function trackDraftValue(trackId, attributeId) {
+  const draft = trackMetaDrafts.value[trackId]
+  const value = draft?.attributes?.[attributeId]
+  if (typeof value === 'number') return value
+  if (attributeId === LIKED_ATTRIBUTE_ID) return 0
+  return 0.5
+}
+
+function setTrackDraftValue(trackId, attributeId, value) {
+  if (!trackMetaDrafts.value[trackId]) {
+    trackMetaDrafts.value[trackId] = { attributes: {}, styles: [] }
+  }
+  const next = attributeId === LIKED_ATTRIBUTE_ID
+    ? Math.max(-1, Math.min(1, value))
+    : Math.max(0, Math.min(1, value))
+  trackMetaDrafts.value[trackId].attributes = {
+    ...trackMetaDrafts.value[trackId].attributes,
+    [attributeId]: next,
+  }
+}
+
+function styleOptionsForTrack(trackId) {
+  const draft = trackMetaDrafts.value[trackId]
+  const base = Array.isArray(styleOptions.value) ? styleOptions.value : []
+  const styles = Array.isArray(draft?.styles) ? draft.styles : []
+  return [...new Set([...base, ...styles])]
+}
+
+function trackDraftHasStyle(trackId, style) {
+  const draft = trackMetaDrafts.value[trackId]
+  return Array.isArray(draft?.styles) && draft.styles.includes(style)
+}
+
+function toggleTrackStyle(trackId, style, checked) {
+  if (!trackMetaDrafts.value[trackId]) {
+    trackMetaDrafts.value[trackId] = { attributes: {}, styles: [] }
+  }
+  const existing = Array.isArray(trackMetaDrafts.value[trackId].styles) ? trackMetaDrafts.value[trackId].styles : []
+  const next = checked
+    ? [...new Set([...existing, style])]
+    : existing.filter(item => item !== style)
+  trackMetaDrafts.value[trackId].styles = next
+}
+
+function addCustomTrackStyle(trackId) {
+  const raw = trackStyleDrafts[trackId]
+  const style = typeof raw === 'string' ? raw.trim() : ''
+  if (!style) return
+  toggleTrackStyle(trackId, style, true)
+  trackStyleDrafts[trackId] = ''
+}
+
+async function saveTrackMeta(trackId) {
+  if (!trackMetaDrafts.value[trackId]) return
+  savingTrackId.value = trackId
+  formMessage.value = ''
+  try {
+    const res = await fetch('/api/music/track-meta', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        trackId,
+        attributes: trackMetaDrafts.value[trackId].attributes,
+        styles: trackMetaDrafts.value[trackId].styles,
+      }),
+    })
+    const data = await res.json()
+    if (!res.ok) throw new Error(data?.error ?? 'Unable to save track metadata')
+    applyMusicSnapshot(data)
+  } catch (err) {
+    formMessage.value = `Save track metadata failed: ${err.message}`
+  } finally {
+    savingTrackId.value = ''
+  }
+}
+
 onMounted(async () => {
   try {
     await fetchLibrary()
@@ -452,6 +685,10 @@ h1 {
   min-width: 0;
 }
 
+.metadata-track {
+  width: 100%;
+}
+
 .track-title {
   margin: 0 0 0.2rem;
   color: #fff;
@@ -469,6 +706,85 @@ h1 {
 
 .small {
   font-size: 0.82rem;
+}
+
+.attr-editor {
+  margin-top: 0.5rem;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.attr-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-size: 0.8rem;
+  color: #bdbdbd;
+}
+
+.styles-editor {
+  margin-top: 0.5rem;
+}
+
+.style-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.style-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  border: 1px solid #353535;
+  border-radius: 999px;
+  padding: 0.15rem 0.45rem;
+  font-size: 0.75rem;
+  color: #bdbdbd;
+}
+
+.custom-style-row {
+  margin-top: 0.45rem;
+  display: flex;
+  gap: 0.45rem;
+}
+
+.custom-style-row input {
+  flex: 1;
+  background: #1d1d1d;
+  border: 1px solid #383838;
+  border-radius: 6px;
+  color: #e0e0e0;
+  padding: 0.45rem 0.55rem;
+}
+
+.attribute-list {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.attribute-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.attribute-row input {
+  background: #1d1d1d;
+  border: 1px solid #383838;
+  border-radius: 6px;
+  color: #e0e0e0;
+  padding: 0.45rem 0.55rem;
+}
+
+.attribute-row.fixed {
+  grid-template-columns: auto auto;
+}
+
+.attribute-label {
+  color: #fff;
+  font-weight: 600;
 }
 
 .rules-grid {

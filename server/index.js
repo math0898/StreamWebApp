@@ -23,6 +23,11 @@ const PUBLIC_DIR = join(__dirname, '..', 'public')
 const MUSIC_DIR = join(PUBLIC_DIR, 'Music')
 const DEFAULT_MUSIC_LIBRARY_PATH = '/Music'
 const DEFAULT_SONG_DURATION_SEC = 0
+const DEFAULT_TRACK_ATTRIBUTE_VALUE = 0.5
+const LIKED_ATTRIBUTE_ID = 'liked'
+const LIKED_POSITIVE_DECAY_MS = 30 * 24 * 60 * 60 * 1000
+const LIKED_NEGATIVE_DECAY_MS = 90 * 24 * 60 * 60 * 1000
+const DEFAULT_STYLE_OPTIONS = ['Acoustic', 'Piano', 'EDM', 'Lofi', 'Christmas']
 const MAX_DEBUG_MESSAGES = 120
 const IMPORT_RATE_LIMIT_WINDOW_MS = 60_000
 const IMPORT_RATE_LIMIT_MAX_REQUESTS = 8
@@ -425,6 +430,7 @@ function reloadMusicLibrary() {
   } else {
     setNowPlaying(state.music.library[0])
   }
+  compactTrackMetadata()
   compactOverlayAlbumRules()
   enforceActiveOverlayTrackRules('rules')
   logMusicDebug(`Reloaded music library with ${state.music.library.length} track(s).`)
@@ -454,10 +460,115 @@ function extensionForMime(mime, fallback = '') {
   return fallback
 }
 
+function clamp(value, min, max) {
+  if (!Number.isFinite(value)) return min
+  if (value < min) return min
+  if (value > max) return max
+  return value
+}
+
+function createLikedAttributeDefinition() {
+  return {
+    id: LIKED_ATTRIBUTE_ID,
+    name: 'Liked',
+    type: 'liked',
+  }
+}
+
+function normalizeCustomAttributeName(rawName, index) {
+  const name = typeof rawName === 'string' ? rawName.trim() : ''
+  return name || `Attribute ${index + 1}`
+}
+
+function normalizeMusicAttributeDefinitions(savedDefinitions) {
+  const custom = []
+  const usedIds = new Set([LIKED_ATTRIBUTE_ID])
+  const source = Array.isArray(savedDefinitions) ? savedDefinitions : []
+  for (let i = 0; i < source.length; i += 1) {
+    const item = source[i]
+    if (!item || typeof item !== 'object') continue
+    if (item.type === 'liked' || item.id === LIKED_ATTRIBUTE_ID) continue
+    const id = typeof item.id === 'string' && item.id.trim() && !usedIds.has(item.id.trim())
+      ? item.id.trim()
+      : newId()
+    usedIds.add(id)
+    custom.push({
+      id,
+      name: normalizeCustomAttributeName(item.name, custom.length),
+      type: 'custom',
+    })
+  }
+  return [createLikedAttributeDefinition(), ...custom]
+}
+
+function normalizeStyleName(raw) {
+  const value = String(raw ?? '').trim().replace(/\s+/g, ' ')
+  return value.slice(0, 40)
+}
+
+function normalizeStyleList(rawStyles) {
+  if (!Array.isArray(rawStyles)) return []
+  const normalized = rawStyles.map(normalizeStyleName).filter(Boolean)
+  return [...new Set(normalized)]
+}
+
+function isSafeTrackKey(value) {
+  if (typeof value !== 'string') return false
+  if (!value.trim()) return false
+  return value !== '__proto__' && value !== 'constructor' && value !== 'prototype'
+}
+
+function getAttributeBounds(definition) {
+  if (definition?.id === LIKED_ATTRIBUTE_ID || definition?.type === 'liked') return { min: -1, max: 1, defaultValue: 0 }
+  return { min: 0, max: 1, defaultValue: DEFAULT_TRACK_ATTRIBUTE_VALUE }
+}
+
+function normalizeTrackAttributeEntry(value, updatedAt, definition) {
+  const bounds = getAttributeBounds(definition)
+  return {
+    value: clamp(typeof value === 'number' ? value : bounds.defaultValue, bounds.min, bounds.max),
+    updatedAt: typeof updatedAt === 'number' && Number.isFinite(updatedAt) ? updatedAt : Date.now(),
+  }
+}
+
+function normalizeTrackMetadataEntry(rawEntry) {
+  const rawAttributes = rawEntry?.attributes && typeof rawEntry.attributes === 'object' ? rawEntry.attributes : {}
+  const attributes = Object.create(null)
+  for (const [attrId, rawAttr] of Object.entries(rawAttributes)) {
+    if (!isSafeTrackKey(attrId)) continue
+    if (typeof rawAttr === 'number') {
+      attributes[attrId] = { value: rawAttr, updatedAt: Date.now() }
+      continue
+    }
+    if (!rawAttr || typeof rawAttr !== 'object') continue
+    attributes[attrId] = {
+      value: typeof rawAttr.value === 'number' ? rawAttr.value : rawAttr,
+      updatedAt: typeof rawAttr.updatedAt === 'number' ? rawAttr.updatedAt : Date.now(),
+    }
+  }
+  return {
+    attributes,
+    styles: normalizeStyleList(rawEntry?.styles),
+  }
+}
+
+function normalizeTrackMetadata(savedTrackMetadata) {
+  const metadata = Object.create(null)
+  if (!savedTrackMetadata || typeof savedTrackMetadata !== 'object') return metadata
+  for (const [trackId, rawEntry] of Object.entries(savedTrackMetadata)) {
+    if (!isSafeTrackKey(trackId)) continue
+    metadata[trackId] = normalizeTrackMetadataEntry(rawEntry)
+  }
+  return metadata
+}
+
 function createInitialMusicState() {
   return {
     library: [{ id: 'default-song', ...DEFAULT_SONG }],
     song: { ...DEFAULT_SONG },
+    attributeDefinitions: normalizeMusicAttributeDefinitions(null),
+    trackMetadata: Object.create(null),
+    styleOptions: [...DEFAULT_STYLE_OPTIONS],
     overlayAlbumRules: Object.create(null),
     rulePauseActive: false,
     playback: {
@@ -508,9 +619,16 @@ function mergeMusicState(savedMusic) {
     if (!isSafeOverlayRuleKey(overlayId)) continue
     overlayAlbumRules[overlayId] = normalizeOverlayAlbumRule(rawRule)
   }
+  const styleOptions = normalizeStyleList([
+    ...DEFAULT_STYLE_OPTIONS,
+    ...(Array.isArray(savedMusic?.styleOptions) ? savedMusic.styleOptions : []),
+  ])
   return {
     library: library.length > 0 ? library : [{ id: 'default-song', ...DEFAULT_SONG }],
     song: mergedSong,
+    attributeDefinitions: normalizeMusicAttributeDefinitions(savedMusic?.attributeDefinitions),
+    trackMetadata: normalizeTrackMetadata(savedMusic?.trackMetadata),
+    styleOptions,
     overlayAlbumRules,
     rulePauseActive: savedMusic?.rulePauseActive === true,
     playback: {
@@ -587,6 +705,127 @@ function patchOverlayAlbumRule(overlayId, nextRule) {
   }
 }
 
+function getMusicAttributeDefinitionMap() {
+  const definitions = Array.isArray(state.music.attributeDefinitions) ? state.music.attributeDefinitions : []
+  const map = new Map()
+  for (const definition of definitions) {
+    if (!definition || typeof definition !== 'object') continue
+    if (!isSafeTrackKey(definition.id)) continue
+    map.set(definition.id, definition)
+  }
+  if (!map.has(LIKED_ATTRIBUTE_ID)) map.set(LIKED_ATTRIBUTE_ID, createLikedAttributeDefinition())
+  return map
+}
+
+function getTrackMetadataEntry(trackId) {
+  if (!isSafeTrackKey(trackId)) return normalizeTrackMetadataEntry(null)
+  if (!state.music.trackMetadata || typeof state.music.trackMetadata !== 'object') {
+    state.music.trackMetadata = Object.create(null)
+  }
+  if (!state.music.trackMetadata[trackId]) {
+    state.music.trackMetadata[trackId] = normalizeTrackMetadataEntry(null)
+  } else {
+    state.music.trackMetadata[trackId] = normalizeTrackMetadataEntry(state.music.trackMetadata[trackId])
+  }
+  return state.music.trackMetadata[trackId]
+}
+
+function ensureTrackMetadataDefaults(trackId, now = Date.now()) {
+  const entry = getTrackMetadataEntry(trackId)
+  const definitionMap = getMusicAttributeDefinitionMap()
+  for (const [definitionId, definition] of definitionMap.entries()) {
+    const current = entry.attributes[definitionId]
+    const normalized = normalizeTrackAttributeEntry(current?.value, current?.updatedAt, definition)
+    if (!current) normalized.updatedAt = now
+    entry.attributes[definitionId] = normalized
+  }
+  for (const definitionId of Object.keys(entry.attributes)) {
+    if (!definitionMap.has(definitionId)) delete entry.attributes[definitionId]
+  }
+  return entry
+}
+
+function decayLikedValue(value, updatedAt, now) {
+  if (value === 0) return 0
+  const elapsedMs = Math.max(0, now - updatedAt)
+  if (value > 0) {
+    const next = value - (elapsedMs / LIKED_POSITIVE_DECAY_MS)
+    return Math.max(0, next)
+  }
+  const next = value + (elapsedMs / LIKED_NEGATIVE_DECAY_MS)
+  return Math.min(0, next)
+}
+
+function getTrackAttributeValues(trackId, now = Date.now()) {
+  const entry = ensureTrackMetadataDefaults(trackId, now)
+  const definitionMap = getMusicAttributeDefinitionMap()
+  const values = Object.create(null)
+  for (const [definitionId, definition] of definitionMap.entries()) {
+    const rawAttr = entry.attributes[definitionId]
+    const normalized = normalizeTrackAttributeEntry(rawAttr?.value, rawAttr?.updatedAt, definition)
+    if (definitionId === LIKED_ATTRIBUTE_ID) {
+      const decayed = decayLikedValue(normalized.value, normalized.updatedAt, now)
+      values[definitionId] = decayed
+      if (Math.abs(decayed - normalized.value) > 1e-6) {
+        entry.attributes[definitionId] = { value: decayed, updatedAt: now }
+      } else {
+        entry.attributes[definitionId] = normalized
+      }
+    } else {
+      values[definitionId] = normalized.value
+      entry.attributes[definitionId] = normalized
+    }
+  }
+  entry.styles = normalizeStyleList(entry.styles)
+  return values
+}
+
+function compactTrackMetadata() {
+  if (!state.music.trackMetadata || typeof state.music.trackMetadata !== 'object') {
+    state.music.trackMetadata = Object.create(null)
+  }
+  const validTrackIds = new Set(
+    (Array.isArray(state.music.library) ? state.music.library : [])
+      .map(track => track.id)
+      .filter(isSafeTrackKey)
+  )
+  for (const trackId of Object.keys(state.music.trackMetadata)) {
+    if (!validTrackIds.has(trackId)) delete state.music.trackMetadata[trackId]
+  }
+  for (const trackId of validTrackIds) ensureTrackMetadataDefaults(trackId)
+}
+
+function patchMusicAttributes(nextAttributes) {
+  const normalized = normalizeMusicAttributeDefinitions([
+    createLikedAttributeDefinition(),
+    ...(Array.isArray(nextAttributes) ? nextAttributes : []),
+  ])
+  state.music.attributeDefinitions = normalized
+  compactTrackMetadata()
+}
+
+function patchTrackMetadata(trackId, patch = {}) {
+  const entry = ensureTrackMetadataDefaults(trackId)
+  const definitionMap = getMusicAttributeDefinitionMap()
+  if (patch.attributes && typeof patch.attributes === 'object') {
+    for (const [definitionId, rawValue] of Object.entries(patch.attributes)) {
+      if (!definitionMap.has(definitionId)) continue
+      if (typeof rawValue !== 'number' || Number.isNaN(rawValue)) continue
+      const definition = definitionMap.get(definitionId)
+      const nextAttr = normalizeTrackAttributeEntry(rawValue, Date.now(), definition)
+      entry.attributes[definitionId] = nextAttr
+    }
+  }
+  if (patch.styles !== undefined) {
+    entry.styles = normalizeStyleList(patch.styles)
+    state.music.styleOptions = normalizeStyleList([
+      ...DEFAULT_STYLE_OPTIONS,
+      ...(Array.isArray(state.music.styleOptions) ? state.music.styleOptions : []),
+      ...entry.styles,
+    ])
+  }
+}
+
 function getAlbumUniqueOwnerMap() {
   const owners = new Map()
   for (const overlay of state.overlays) {
@@ -643,20 +882,35 @@ function enforceActiveOverlayTrackRules(reason = 'rule update') {
 }
 
 function getMusicSnapshot() {
+  compactTrackMetadata()
   compactOverlayAlbumRules()
+  const now = Date.now()
+  const library = state.music.library.map(track => {
+    const entry = getTrackMetadataEntry(track.id)
+    return {
+      ...track,
+      attributes: getTrackAttributeValues(track.id, now),
+      styles: normalizeStyleList(entry.styles),
+    }
+  })
   return {
-    library: state.music.library,
+    library,
     debugMessages: musicDebugMessages,
     song: { ...state.music.song },
     activeOverlayId: state.activeId,
     overlays: state.overlays.map(overlay => ({ id: overlay.id, name: overlay.name })),
     overlayAlbumRules: state.music.overlayAlbumRules,
+    attributeDefinitions: state.music.attributeDefinitions,
+    styleOptions: normalizeStyleList([
+      ...DEFAULT_STYLE_OPTIONS,
+      ...(Array.isArray(state.music.styleOptions) ? state.music.styleOptions : []),
+    ]),
     status: state.music.playback.status,
     sequence: state.music.playback.sequence,
     startedAt: state.music.playback.startedAt,
     pauseStartedAt: state.music.playback.pauseStartedAt,
     pausedMsTotal: state.music.playback.pausedMsTotal,
-    serverTime: Date.now(),
+    serverTime: now,
   }
 }
 
@@ -913,6 +1167,28 @@ app.post('/api/music/rules', (req, res) => {
   if (!overlay) return res.status(404).json({ error: 'Overlay not found' })
   patchOverlayAlbumRule(overlayId, req.body?.rules)
   enforceActiveOverlayTrackRules('rules')
+  saveState()
+  broadcast()
+  res.json(getMusicSnapshot())
+})
+
+app.post('/api/music/attributes', (req, res) => {
+  const attributes = req.body?.attributes
+  if (!Array.isArray(attributes)) return res.status(400).json({ error: 'attributes must be an array' })
+  patchMusicAttributes(attributes)
+  saveState()
+  broadcast()
+  res.json(getMusicSnapshot())
+})
+
+app.post('/api/music/track-meta', (req, res) => {
+  const trackId = typeof req.body?.trackId === 'string' ? req.body.trackId : ''
+  const track = state.music.library.find(item => item.id === trackId)
+  if (!track) return res.status(404).json({ error: 'Track not found' })
+  patchTrackMetadata(trackId, {
+    attributes: req.body?.attributes,
+    styles: req.body?.styles,
+  })
   saveState()
   broadcast()
   res.json(getMusicSnapshot())
