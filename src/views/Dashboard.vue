@@ -2,6 +2,48 @@
   <div class="dashboard">
     <h1>Dashboard</h1>
 
+    <!-- ── Overlay sub-navbar ─────────────────────────── -->
+    <div class="overlay-nav">
+      <div class="overlay-tabs">
+        <button
+          v-for="ov in overlayList"
+          :key="ov.id"
+          class="overlay-tab"
+          :class="{ 'tab-selected': editingId === ov.id }"
+          @click="selectOverlay(ov.id)"
+        >
+          <span v-if="activeId === ov.id" class="live-dot" title="Currently live on /overlay">●</span>
+          {{ ov.name }}
+        </button>
+        <button class="overlay-tab tab-new" title="New overlay" @click="createOverlay">＋</button>
+      </div>
+      <div class="overlay-actions">
+        <button
+          v-if="editingId !== activeId"
+          class="action-btn action-activate"
+          @click="activateOverlay(editingId)"
+        >Set Active</button>
+        <button class="action-btn" @click="startRename">Rename</button>
+        <button
+          v-if="overlayList.length > 1"
+          class="action-btn action-delete"
+          @click="confirmDelete"
+        >Delete</button>
+      </div>
+      <div v-if="renaming" class="overlay-rename-row">
+        <input
+          ref="renameInputRef"
+          type="text"
+          class="rename-input"
+          v-model="renameVal"
+          @keyup.enter="submitRename"
+          @keyup.escape="renaming = false"
+        />
+        <button class="action-btn" @click="submitRename">Save</button>
+        <button class="action-btn" @click="renaming = false">Cancel</button>
+      </div>
+    </div>
+
     <!-- ── Counts ─────────────────────────────────────── -->
     <section class="section">
       <h2 class="section-title">Counts</h2>
@@ -135,9 +177,17 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, nextTick } from 'vue'
 
-// ── Server-persisted state ────────────────────────────────────
+// ── Overlay management ────────────────────────────────────────
+const overlayList    = ref([])    // [{ id, name }]
+const activeId       = ref('')    // overlay shown on /overlay
+const editingId      = ref('')    // overlay being edited in dashboard
+const renaming       = ref(false)
+const renameVal      = ref('')
+const renameInputRef = ref(null)
+
+// ── Server-persisted state (for the editing overlay) ──────────
 const count1 = ref(0)
 const count2 = ref(0)
 const max1   = ref(100)
@@ -195,18 +245,113 @@ function applyState(data) {
   }
 }
 
+async function fetchOverlayState(id) {
+  const res = await fetch(`/api/state?id=${encodeURIComponent(id)}`)
+  applyState(await res.json())
+}
+
+async function fetchOverlayList() {
+  const res  = await fetch('/api/overlays')
+  const data = await res.json()
+  overlayList.value = data.overlays
+  activeId.value    = data.activeId
+  return data
+}
+
 onMounted(async () => {
   try {
-    const res = await fetch('/api/state')
-    applyState(await res.json())
+    const { activeId: aid } = await fetchOverlayList()
+    editingId.value = aid
+    await fetchOverlayState(aid)
   } catch (err) {
     console.warn('[dashboard] Failed to load initial state:', err)
   }
 })
 
-async function post(patch) {
+// ── Overlay management actions ────────────────────────────────
+async function selectOverlay(id) {
+  if (editingId.value === id) return
+  editingId.value = id
+  renaming.value  = false
   try {
-    const res = await fetch('/api/state', {
+    await fetchOverlayState(id)
+  } catch (err) {
+    console.warn('[dashboard] Failed to fetch overlay state:', err)
+  }
+}
+
+async function createOverlay() {
+  try {
+    const res  = await fetch('/api/overlays', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    })
+    const data = await res.json()
+    overlayList.value.push(data)
+    await selectOverlay(data.id)
+  } catch (err) {
+    console.warn('[dashboard] Failed to create overlay:', err)
+  }
+}
+
+async function activateOverlay(id) {
+  try {
+    const res  = await fetch(`/api/overlays/${encodeURIComponent(id)}/activate`, { method: 'POST' })
+    const data = await res.json()
+    activeId.value = data.activeId
+  } catch (err) {
+    console.warn('[dashboard] Failed to activate overlay:', err)
+  }
+}
+
+async function startRename() {
+  const ov = overlayList.value.find(o => o.id === editingId.value)
+  renameVal.value = ov?.name ?? ''
+  renaming.value  = true
+  await nextTick()
+  renameInputRef.value?.focus()
+}
+
+async function submitRename() {
+  const name = renameVal.value.trim()
+  if (!name) return
+  try {
+    const res  = await fetch(`/api/overlays/${encodeURIComponent(editingId.value)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    })
+    const data = await res.json()
+    const ov = overlayList.value.find(o => o.id === editingId.value)
+    if (ov) ov.name = data.name
+    renaming.value = false
+  } catch (err) {
+    console.warn('[dashboard] Failed to rename overlay:', err)
+  }
+}
+
+async function confirmDelete() {
+  const ov = overlayList.value.find(o => o.id === editingId.value)
+  if (!window.confirm(`Delete overlay "${ov?.name ?? editingId.value}"? This cannot be undone.`)) return
+  try {
+    const res  = await fetch(`/api/overlays/${encodeURIComponent(editingId.value)}`, { method: 'DELETE' })
+    const data = await res.json()
+    overlayList.value = data.overlays
+    activeId.value    = data.activeId
+    editingId.value   = data.activeId
+    renaming.value    = false
+    await fetchOverlayState(data.activeId)
+  } catch (err) {
+    console.warn('[dashboard] Failed to delete overlay:', err)
+  }
+}
+
+// ── POST helper (always targets the editing overlay) ─────────
+async function post(patch) {
+  const url = `/api/state?id=${encodeURIComponent(editingId.value)}`
+  try {
+    const res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(patch),
@@ -215,7 +360,7 @@ async function post(patch) {
   } catch (err) {
     console.warn('[dashboard] Failed to POST state:', err)
     try {
-      applyState(await (await fetch('/api/state')).json())
+      applyState(await (await fetch(url)).json())
     } catch (recoveryErr) {
       console.warn('[dashboard] Failed to recover state:', recoveryErr)
     }
@@ -285,10 +430,87 @@ function setNestedField(objKey, field, value) {
 
 h1 {
   font-size: 2rem;
-  margin: 0 0 1.5rem;
+  margin: 0 0 1rem;
   color: #ffffff;
 }
 
+/* ── Overlay sub-navbar ───────────────────────── */
+.overlay-nav {
+  width: 100%;
+  max-width: 640px;
+  margin-bottom: 1.5rem;
+}
+
+.overlay-tabs {
+  display: flex;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  border-bottom: 1px solid #2a2a2a;
+  padding-bottom: 0;
+}
+
+.overlay-tab {
+  background: #181818;
+  border: 1px solid #303030;
+  border-bottom: none;
+  color: #757575;
+  border-radius: 6px 6px 0 0;
+  padding: 0.4rem 0.85rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+.overlay-tab:hover { background: #222; color: #bdbdbd; }
+.tab-selected      { background: #2a2a2a; color: #ffffff; border-color: #555; }
+.tab-new           { color: #424242; font-size: 1.1rem; padding: 0.25rem 0.65rem; }
+.tab-new:hover     { color: #9e9e9e; }
+
+.live-dot { color: #66bb6a; font-size: 0.7rem; }
+
+.overlay-actions {
+  display: flex;
+  gap: 0.4rem;
+  padding: 0.4rem 0 0;
+}
+
+.action-btn {
+  font-size: 0.78rem;
+  padding: 0.28rem 0.65rem;
+  background: #1e1e1e;
+  color: #9e9e9e;
+  border: 1px solid #3a3a3a;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.action-btn:hover         { background: #282828; }
+.action-activate          { color: #66bb6a; border-color: #2e5c30; }
+.action-activate:hover    { background: #1a2e1c; }
+.action-delete            { color: #ef9a9a; border-color: #614040; }
+.action-delete:hover      { background: #2a1a1a; }
+
+.overlay-rename-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.4rem 0 0;
+}
+
+.rename-input {
+  background-color: #1e1e1e;
+  color: #e0e0e0;
+  border: 1px solid #424242;
+  border-radius: 6px;
+  padding: 0.3rem 0.6rem;
+  font-size: 0.9rem;
+  width: 12rem;
+}
+
+/* ── Sections ────────────────────────────────── */
 .section {
   width: 100%;
   max-width: 640px;
