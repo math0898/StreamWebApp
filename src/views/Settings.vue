@@ -4,10 +4,9 @@
     <section class="section">
       <h2 class="section-title">Module Defaults Moved</h2>
       <p class="hint-inline">
-        ProgressBar module defaults are now configured directly on the Dashboard under
-        <strong>ProgressBar Defaults</strong>.
+        Module defaults are configured on the <strong>Modules</strong> page.
       </p>
-      <p class="hint-inline">Use that section when you want new modules to inherit different defaults.</p>
+      <p class="hint-inline">Use /modules to control defaults for ProgressBar, Image, and Text modules.</p>
     </section>
   </div>
 </template>

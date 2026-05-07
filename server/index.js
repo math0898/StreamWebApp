@@ -25,8 +25,8 @@ const FACTORY_MODULE_DEFAULTS = {
     value: { ...DEFAULT_VALUE },
   },
   image: {
-    src: '',
-    alt: '',
+    src: '/sample-module-image.svg',
+    alt: 'Sample module image',
     opacity: 1,
     transform: { ...DEFAULT_IMAGE_TRANSFORM },
   },
@@ -153,7 +153,7 @@ function mergeModuleDefaults(saved) {
       value: { ...DEFAULT_VALUE, ...(p.value ?? {}) },
     },
     image: {
-      src:       typeof i.src === 'string' ? i.src : FACTORY_MODULE_DEFAULTS.image.src,
+      src:       typeof i.src === 'string' && i.src.trim() ? i.src : FACTORY_MODULE_DEFAULTS.image.src,
       alt:       typeof i.alt === 'string' ? i.alt : FACTORY_MODULE_DEFAULTS.image.alt,
       opacity:   typeof i.opacity === 'number' ? i.opacity : FACTORY_MODULE_DEFAULTS.image.opacity,
       transform: { ...DEFAULT_IMAGE_TRANSFORM, ...(i.transform ?? {}) },

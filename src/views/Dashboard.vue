@@ -43,48 +43,6 @@
       </div>
     </div>
 
-    <div class="module-card">
-      <div class="module-header">
-        <span class="module-title">ProgressBar Defaults</span>
-      </div>
-      <section class="section">
-        <h2 class="section-title">Used when adding ProgressBar modules</h2>
-
-        <div class="row">
-          <label class="field-label">Label</label>
-          <input type="text" :value="progressDefaults.label" @change="patchDefaults({ label: $event.target.value })" />
-        </div>
-
-        <div class="row">
-          <label class="field-label">Goal</label>
-          <input type="number" min="1" :value="progressDefaults.max" @change="patchDefaults({ max: $event.target.valueAsNumber })" />
-        </div>
-
-        <div class="row">
-          <label class="field-label">Color</label>
-          <input type="color" :value="progressDefaults.color" @input="patchDefaults({ color: $event.target.value })" />
-        </div>
-
-        <p class="sub-title">Bar</p>
-        <div v-for="f in barFields" :key="'db'+f.key" class="row">
-          <label class="field-label">{{ f.label }}</label>
-          <input type="number" :step="f.step" :value="progressDefaults.bar[f.key]" @change="patchDefaults({ bar: { [f.key]: $event.target.valueAsNumber } })" />
-        </div>
-
-        <p class="sub-title">Title</p>
-        <div v-for="f in titleFields" :key="'dt'+f.key" class="row">
-          <label class="field-label">{{ f.label }}</label>
-          <input type="number" :step="f.step" :value="progressDefaults.title[f.key]" @change="patchDefaults({ title: { [f.key]: $event.target.valueAsNumber } })" />
-        </div>
-
-        <p class="sub-title">Value</p>
-        <div v-for="f in valueFields" :key="'dv'+f.key" class="row">
-          <label class="field-label">{{ f.label }}</label>
-          <input type="number" :step="f.step" :value="progressDefaults.value[f.key]" @change="patchDefaults({ value: { [f.key]: $event.target.valueAsNumber } })" />
-        </div>
-      </section>
-    </div>
-
     <div v-for="mod in modules" :key="mod.id" class="module-card">
       <div class="module-header">
         <span class="module-title">{{ moduleTitle(mod) }}</span>
@@ -110,7 +68,7 @@
         <div class="row">
           <label class="field-label">Goal</label>
           <input type="number" min="1" :value="mod.max" @change="patchMod(mod.id, { max: $event.target.valueAsNumber })" />
-          <button class="reset-sm" @click="patchMod(mod.id, { max: progressDefaults.max || 100 })">Reset</button>
+          <button class="reset-sm" @click="patchMod(mod.id, { max: 100 })">Reset</button>
         </div>
 
         <div class="row">
@@ -216,14 +174,6 @@ const steps   = reactive({})
 const setVals = reactive({})
 
 const newModuleType = ref('progressBar')
-const progressDefaults = ref({
-  label: 'Counter',
-  max: 100,
-  color: '#82b1ff',
-  bar: { x: 0, y: 0, scaleX: 1, scaleY: 1 },
-  title: { x: 0, y: 0, fontSize: 16 },
-  value: { x: 0, y: 0, fontSize: 14 },
-})
 
 const barFields = [
   { key: 'x',      label: 'X Offset', step: 1 },
@@ -277,33 +227,6 @@ async function fetchOverlayState(id) {
   applyModules(data.modules ?? [])
 }
 
-async function fetchDefaults() {
-  const res = await fetch('/api/defaults')
-  const data = await res.json()
-  if (data?.progressBar) progressDefaults.value = data.progressBar
-}
-
-async function patchDefaults(patch) {
-  for (const [k, v] of Object.entries(patch)) {
-    if (v && typeof v === 'object' && !Array.isArray(v)) {
-      progressDefaults.value[k] = { ...progressDefaults.value[k], ...v }
-    } else {
-      progressDefaults.value[k] = v
-    }
-  }
-  try {
-    const res = await fetch('/api/defaults', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ progressBar: patch }),
-    })
-    const data = await res.json()
-    if (data?.progressBar) progressDefaults.value = data.progressBar
-  } catch (err) {
-    console.warn('[dashboard] Failed to patch defaults:', err)
-  }
-}
-
 async function fetchOverlayList() {
   const res  = await fetch('/api/overlays')
   const data = await res.json()
@@ -316,7 +239,7 @@ onMounted(async () => {
   try {
     const { activeId: aid } = await fetchOverlayList()
     editingId.value = aid
-    await Promise.all([fetchOverlayState(aid), fetchDefaults()])
+    await fetchOverlayState(aid)
   } catch (err) {
     console.warn('[dashboard] Failed to load initial state:', err)
   }
