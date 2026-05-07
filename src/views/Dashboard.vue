@@ -315,6 +315,52 @@
             </div>
           </template>
 
+          <template v-else-if="mod.type === 'dj'">
+            <div class="edit-row">
+              <label class="edit-label">Name</label>
+              <input type="text" class="wide-input" placeholder="DJ Module" :value="mod.name" @change="patchMod(mod.id, { name: $event.target.value })" />
+            </div>
+            <div class="edit-row">
+              <label class="edit-label">Liked Bonus</label>
+              <input type="number" step="0.1" min="0" :value="mod.likedBonus" @change="patchMod(mod.id, { likedBonus: $event.target.valueAsNumber })" />
+            </div>
+            <div class="edit-row">
+              <label class="edit-label">Min Repeats</label>
+              <input type="number" step="1" min="0" :value="mod.minRepeats" @change="patchMod(mod.id, { minRepeats: $event.target.valueAsNumber })" />
+            </div>
+            <div class="edit-row">
+              <label class="edit-label">Style Penalty</label>
+              <input type="number" step="0.01" min="0" :value="mod.stylePenalty" @change="patchMod(mod.id, { stylePenalty: $event.target.valueAsNumber })" />
+            </div>
+            <div class="edit-row">
+              <label class="edit-label">Mood Window</label>
+              <input type="number" step="1" min="1" :value="mod.moodWindow" @change="patchMod(mod.id, { moodWindow: $event.target.valueAsNumber })" />
+            </div>
+            <p class="edit-sub">Target Styles</p>
+            <p v-if="!(music?.styleOptions?.length)" class="edit-note">No styles loaded. Reload the music library.</p>
+            <div v-for="style in (music?.styleOptions ?? [])" :key="mod.id+'-style-'+style" class="edit-row checkbox-row">
+              <label class="edit-label">{{ style }}</label>
+              <input
+                type="checkbox"
+                :checked="mod.targetStyles?.includes(style)"
+                @change="patchDjStyles(mod, style, $event.target.checked)"
+              />
+            </div>
+            <p class="edit-sub">Target Attributes</p>
+            <p v-if="!customDjAttributes.length" class="edit-note">No custom attributes defined. Add them in /music.</p>
+            <div v-for="definition in customDjAttributes" :key="mod.id+'-attr-'+definition.id" class="edit-row">
+              <label class="edit-label">{{ definition.name }} ({{ ((mod.targetAttributes?.[definition.id]) ?? 0.5).toFixed(2) }})</label>
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.01"
+                :value="(mod.targetAttributes?.[definition.id]) ?? 0.5"
+                @change="patchMod(mod.id, { targetAttributes: { ...mod.targetAttributes, [definition.id]: $event.target.valueAsNumber } })"
+              />
+            </div>
+          </template>
+
         </div>
       </div>
     </div>
@@ -324,6 +370,7 @@
         <option value="progressBar">ProgressBar</option>
         <option value="image">Image</option>
         <option value="text">Text</option>
+        <option value="dj">DJ</option>
       </select>
       <button class="add-module-btn" @click="addModule">+ Add Module</button>
     </div>
@@ -399,9 +446,14 @@ const textTransformFields = [
   { key: 'fontSize', label: 'Font Size', step: 1 },
 ]
 
+const customDjAttributes = computed(() =>
+  (music.value?.attributeDefinitions ?? []).filter(d => d.type === 'custom')
+)
+
 function moduleTitle(mod) {
   if (mod.type === 'image') return mod.name?.trim() || 'Image Module'
   if (mod.type === 'text') return mod.name?.trim() || 'Text Module'
+  if (mod.type === 'dj') return mod.name?.trim() || 'DJ Module'
   return mod.label || 'ProgressBar Module'
 }
 
@@ -606,6 +658,14 @@ async function removeModule(moduleId) {
   } catch (err) {
     console.warn('[dashboard] Failed to remove module:', err)
   }
+}
+
+function patchDjStyles(mod, style, checked) {
+  const current = Array.isArray(mod.targetStyles) ? [...mod.targetStyles] : []
+  const next = checked
+    ? [...new Set([...current, style])]
+    : current.filter(s => s !== style)
+  patchMod(mod.id, { targetStyles: next })
 }
 
 async function pauseMusic() {
@@ -1090,6 +1150,13 @@ h1 {
   transition: background 0.15s;
 }
 .reset-sm:hover { background: #1a1a1a; }
+
+.edit-note {
+  font-size: 0.75rem;
+  color: #616161;
+  margin: 0 0 0.4rem;
+  font-style: italic;
+}
 
 /* ── Add module row ──────────────────────────────────── */
 .add-module-row {

@@ -13,6 +13,10 @@
       <p class="muted"><strong>Artist:</strong> {{ music.song?.artist ?? 'Unknown Artist' }}</p>
       <p class="muted"><strong>Album:</strong> {{ music.song?.album ?? 'Unknown Album' }}</p>
       <p class="muted"><strong>Status:</strong> {{ music.status ?? 'unknown' }}</p>
+      <div class="playback-controls">
+        <button class="action-btn" :disabled="music.status !== 'playing'" @click="pauseMusicPage">⏸ Pause</button>
+        <button class="action-btn" :disabled="music.status !== 'paused'" @click="resumeMusicPage">▶ Resume</button>
+      </div>
     </section>
 
     <section class="panel">
@@ -331,6 +335,28 @@ async function reloadLibrary() {
     formMessage.value = `Reload failed: ${err.message}`
   } finally {
     reloading.value = false
+  }
+}
+
+async function pauseMusicPage() {
+  try {
+    const res = await fetch('/api/music/pause', { method: 'POST' })
+    const data = await res.json()
+    if (!res.ok) throw new Error(data?.error ?? 'Pause failed')
+    music.status = data.status ?? music.status
+  } catch (err) {
+    formMessage.value = `Pause failed: ${err.message}`
+  }
+}
+
+async function resumeMusicPage() {
+  try {
+    const res = await fetch('/api/music/resume', { method: 'POST' })
+    const data = await res.json()
+    if (!res.ok) throw new Error(data?.error ?? 'Resume failed')
+    music.status = data.status ?? music.status
+  } catch (err) {
+    formMessage.value = `Resume failed: ${err.message}`
   }
 }
 
@@ -704,6 +730,12 @@ h1 {
   margin-top: 0.35rem;
 }
 
+.playback-controls {
+  display: flex;
+  gap: 0.45rem;
+  margin-top: 0.5rem;
+}
+
 .muted {
   margin: 0.2rem 0;
   color: #9e9e9e;
@@ -756,6 +788,7 @@ h1 {
 
 .custom-style-row input {
   flex: 1;
+  min-width: 0;
   background: #1d1d1d;
   border: 1px solid #383838;
   border-radius: 6px;
