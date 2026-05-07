@@ -10,6 +10,10 @@ const DATA_FILE = join(__dirname, 'data.json')
 const DEFAULT_BAR   = { x: 0, y: 0, scaleX: 1, scaleY: 1 }
 const DEFAULT_TITLE = { x: 0, y: 0, fontSize: 16 }
 const DEFAULT_VALUE = { x: 0, y: 0, fontSize: 14 }
+const DEFAULT_IMAGE_TRANSFORM = { x: 0, y: 0, scaleX: 1, scaleY: 1 }
+const DEFAULT_TEXT_TRANSFORM  = { x: 0, y: 0, scaleX: 1, scaleY: 1, fontSize: 32 }
+
+const MODULE_TYPES = new Set(['progressBar', 'image', 'text'])
 
 const FACTORY_MODULE_DEFAULTS = {
   progressBar: {
@@ -20,28 +24,174 @@ const FACTORY_MODULE_DEFAULTS = {
     title: { ...DEFAULT_TITLE },
     value: { ...DEFAULT_VALUE },
   },
+  image: {
+    src: '',
+    alt: '',
+    opacity: 1,
+    transform: { ...DEFAULT_IMAGE_TRANSFORM },
+  },
+  text: {
+    text: 'Sample text',
+    color: '#ffffff',
+    transform: { ...DEFAULT_TEXT_TRANSFORM },
+  },
 }
 
 function newId() { return randomUUID().slice(0, 8) }
 
-// Merge a saved module with hard-coded defaults (used during loadState)
-function mergeModule(saved) {
-  const d = FACTORY_MODULE_DEFAULTS.progressBar
-  return {
-    id:    saved.id    ?? newId(),
-    type:  saved.type  ?? 'progressBar',
-    label: saved.label ?? d.label,
-    count: typeof saved.count === 'number' ? saved.count : 0,
-    max:   typeof saved.max === 'number' && saved.max > 0 ? saved.max : d.max,
-    color: saved.color ?? d.color,
-    bar:   { ...DEFAULT_BAR,   ...(saved.bar   ?? {}) },
-    title: { ...DEFAULT_TITLE, ...(saved.title ?? {}) },
-    value: { ...DEFAULT_VALUE, ...(saved.value ?? {}) },
+function patchProgressBar(target, patch) {
+  if (typeof patch.label === 'string') target.label = patch.label
+  if (typeof patch.count === 'number') target.count = patch.count
+  if (typeof patch.max   === 'number' && patch.max > 0) target.max = patch.max
+  if (typeof patch.color === 'string') target.color = patch.color
+
+  if (patch.bar && typeof patch.bar === 'object') {
+    const { x, y, scaleX, scaleY } = patch.bar
+    if (typeof x      === 'number') target.bar.x      = x
+    if (typeof y      === 'number') target.bar.y      = y
+    if (typeof scaleX === 'number') target.bar.scaleX = scaleX
+    if (typeof scaleY === 'number') target.bar.scaleY = scaleY
+  }
+
+  for (const key of ['title', 'value']) {
+    if (patch[key] && typeof patch[key] === 'object') {
+      const { x, y, fontSize } = patch[key]
+      if (typeof x        === 'number') target[key].x        = x
+      if (typeof y        === 'number') target[key].y        = y
+      if (typeof fontSize === 'number' && fontSize > 0) target[key].fontSize = fontSize
+    }
   }
 }
 
-// Create a brand-new module using the current state's module defaults
-function newModule() {
+function patchImage(target, patch) {
+  if (typeof patch.src === 'string') target.src = patch.src
+  if (typeof patch.alt === 'string') target.alt = patch.alt
+  if (typeof patch.opacity === 'number' && patch.opacity >= 0 && patch.opacity <= 1) target.opacity = patch.opacity
+
+  if (patch.transform && typeof patch.transform === 'object') {
+    const { x, y, scaleX, scaleY } = patch.transform
+    if (typeof x      === 'number') target.transform.x      = x
+    if (typeof y      === 'number') target.transform.y      = y
+    if (typeof scaleX === 'number') target.transform.scaleX = scaleX
+    if (typeof scaleY === 'number') target.transform.scaleY = scaleY
+  }
+}
+
+function patchText(target, patch) {
+  if (typeof patch.text  === 'string') target.text = patch.text
+  if (typeof patch.color === 'string') target.color = patch.color
+
+  if (patch.transform && typeof patch.transform === 'object') {
+    const { x, y, scaleX, scaleY, fontSize } = patch.transform
+    if (typeof x      === 'number') target.transform.x      = x
+    if (typeof y      === 'number') target.transform.y      = y
+    if (typeof scaleX === 'number') target.transform.scaleX = scaleX
+    if (typeof scaleY === 'number') target.transform.scaleY = scaleY
+    if (typeof fontSize === 'number' && fontSize > 0) target.transform.fontSize = fontSize
+  }
+}
+
+function mergeModule(saved) {
+  const type = MODULE_TYPES.has(saved?.type) ? saved.type : 'progressBar'
+
+  if (type === 'image') {
+    const d = FACTORY_MODULE_DEFAULTS.image
+    const merged = {
+      id:        saved?.id ?? newId(),
+      type:      'image',
+      src:       typeof saved?.src === 'string' ? saved.src : d.src,
+      alt:       typeof saved?.alt === 'string' ? saved.alt : d.alt,
+      opacity:   typeof saved?.opacity === 'number' ? saved.opacity : d.opacity,
+      transform: { ...DEFAULT_IMAGE_TRANSFORM, ...(saved?.transform ?? {}) },
+    }
+    patchImage(merged, merged)
+    return merged
+  }
+
+  if (type === 'text') {
+    const d = FACTORY_MODULE_DEFAULTS.text
+    const merged = {
+      id:        saved?.id ?? newId(),
+      type:      'text',
+      text:      typeof saved?.text === 'string' ? saved.text : d.text,
+      color:     typeof saved?.color === 'string' ? saved.color : d.color,
+      transform: { ...DEFAULT_TEXT_TRANSFORM, ...(saved?.transform ?? {}) },
+    }
+    patchText(merged, merged)
+    return merged
+  }
+
+  const d = FACTORY_MODULE_DEFAULTS.progressBar
+  const legacyMax = typeof saved?.max === 'number' ? saved.max : undefined
+  const merged = {
+    id:    saved?.id    ?? newId(),
+    type:  'progressBar',
+    label: typeof saved?.label === 'string' ? saved.label : d.label,
+    count: typeof saved?.count === 'number' ? saved.count : 0,
+    max:   legacyMax && legacyMax > 0 ? legacyMax : d.max,
+    color: typeof saved?.color === 'string' ? saved.color : d.color,
+    bar:   { ...DEFAULT_BAR,   ...(saved?.bar   ?? {}) },
+    title: { ...DEFAULT_TITLE, ...(saved?.title ?? {}) },
+    value: { ...DEFAULT_VALUE, ...(saved?.value ?? {}) },
+  }
+  patchProgressBar(merged, merged)
+  return merged
+}
+
+function mergeModuleDefaults(saved) {
+  const p = saved?.progressBar ?? {}
+  const i = saved?.image ?? {}
+  const t = saved?.text ?? {}
+
+  return {
+    progressBar: {
+      label: typeof p.label === 'string' ? p.label : FACTORY_MODULE_DEFAULTS.progressBar.label,
+      max:   typeof p.max === 'number' && p.max > 0 ? p.max : FACTORY_MODULE_DEFAULTS.progressBar.max,
+      color: typeof p.color === 'string' ? p.color : FACTORY_MODULE_DEFAULTS.progressBar.color,
+      bar:   { ...DEFAULT_BAR,   ...(p.bar   ?? {}) },
+      title: { ...DEFAULT_TITLE, ...(p.title ?? {}) },
+      value: { ...DEFAULT_VALUE, ...(p.value ?? {}) },
+    },
+    image: {
+      src:       typeof i.src === 'string' ? i.src : FACTORY_MODULE_DEFAULTS.image.src,
+      alt:       typeof i.alt === 'string' ? i.alt : FACTORY_MODULE_DEFAULTS.image.alt,
+      opacity:   typeof i.opacity === 'number' ? i.opacity : FACTORY_MODULE_DEFAULTS.image.opacity,
+      transform: { ...DEFAULT_IMAGE_TRANSFORM, ...(i.transform ?? {}) },
+    },
+    text: {
+      text:      typeof t.text === 'string' ? t.text : FACTORY_MODULE_DEFAULTS.text.text,
+      color:     typeof t.color === 'string' ? t.color : FACTORY_MODULE_DEFAULTS.text.color,
+      transform: { ...DEFAULT_TEXT_TRANSFORM, ...(t.transform ?? {}) },
+    },
+  }
+}
+
+function newModule(type = 'progressBar') {
+  const actualType = MODULE_TYPES.has(type) ? type : 'progressBar'
+
+  if (actualType === 'image') {
+    const d = state.moduleDefaults.image
+    return {
+      id:        newId(),
+      type:      'image',
+      src:       d.src,
+      alt:       d.alt,
+      opacity:   d.opacity,
+      transform: { ...DEFAULT_IMAGE_TRANSFORM, ...d.transform },
+    }
+  }
+
+  if (actualType === 'text') {
+    const d = state.moduleDefaults.text
+    return {
+      id:        newId(),
+      type:      'text',
+      text:      d.text,
+      color:     d.color,
+      transform: { ...DEFAULT_TEXT_TRANSFORM, ...d.transform },
+    }
+  }
+
   const d = state.moduleDefaults.progressBar
   return {
     id:    newId(),
@@ -56,22 +206,6 @@ function newModule() {
   }
 }
 
-// Merge saved moduleDefaults with factory defaults
-function mergeModuleDefaults(saved) {
-  const d = saved?.progressBar ?? {}
-  return {
-    progressBar: {
-      label: d.label ?? FACTORY_MODULE_DEFAULTS.progressBar.label,
-      max:   typeof d.max === 'number' && d.max > 0 ? d.max : FACTORY_MODULE_DEFAULTS.progressBar.max,
-      color: d.color ?? FACTORY_MODULE_DEFAULTS.progressBar.color,
-      bar:   { ...DEFAULT_BAR,   ...(d.bar   ?? {}) },
-      title: { ...DEFAULT_TITLE, ...(d.title ?? {}) },
-      value: { ...DEFAULT_VALUE, ...(d.value ?? {}) },
-    },
-  }
-}
-
-// Migrate a legacy overlay (flat fields) into the module-based format
 function migrateOverlay(saved) {
   const legacyMax = typeof saved.max === 'number' ? saved.max : undefined
   const overlayId = saved.id ?? 'default'
@@ -81,6 +215,7 @@ function migrateOverlay(saved) {
     modules: [
       mergeModule({
         id:    `${overlayId}-m1`,
+        type:  'progressBar',
         label: saved.label1 ?? 'Counter 1',
         count: saved.count1 ?? 0,
         max:   saved.max1 ?? legacyMax ?? FACTORY_MODULE_DEFAULTS.progressBar.max,
@@ -91,6 +226,7 @@ function migrateOverlay(saved) {
       }),
       mergeModule({
         id:    `${overlayId}-m2`,
+        type:  'progressBar',
         label: saved.label2 ?? 'Counter 2',
         count: saved.count2 ?? 0,
         max:   saved.max2 ?? legacyMax ?? FACTORY_MODULE_DEFAULTS.progressBar.max,
@@ -107,7 +243,8 @@ function loadState() {
   try {
     const saved          = JSON.parse(readFileSync(DATA_FILE, 'utf8'))
     const moduleDefaults = mergeModuleDefaults(saved.moduleDefaults)
-    let overlays, activeId
+    let overlays
+    let activeId
 
     if (Array.isArray(saved.overlays) && saved.overlays.length > 0) {
       overlays = saved.overlays.map(o =>
@@ -117,7 +254,6 @@ function loadState() {
       )
       activeId = overlays.find(o => o.id === saved.activeId) ? saved.activeId : overlays[0].id
     } else {
-      // Completely legacy flat format
       overlays = [migrateOverlay({ ...saved, id: 'default', name: 'Default' })]
       activeId = 'default'
     }
@@ -131,8 +267,8 @@ function loadState() {
         id:   'default',
         name: 'Default',
         modules: [
-          mergeModule({ id: 'default-m1', label: 'Counter 1', color: '#82b1ff' }),
-          mergeModule({ id: 'default-m2', label: 'Counter 2', color: '#a5d6a7' }),
+          mergeModule({ id: 'default-m1', type: 'progressBar', label: 'Counter 1', color: '#82b1ff' }),
+          mergeModule({ id: 'default-m2', type: 'progressBar', label: 'Counter 2', color: '#a5d6a7' }),
         ],
       }],
     }
@@ -178,54 +314,24 @@ function broadcast() {
 }
 
 function patchModule(mod, body) {
-  if (typeof body.label === 'string') mod.label = body.label
-  if (typeof body.count === 'number') mod.count = body.count
-  if (typeof body.max   === 'number' && body.max > 0) mod.max = body.max
-  if (typeof body.color === 'string') mod.color = body.color
-
-  if (body.bar && typeof body.bar === 'object') {
-    const { x, y, scaleX, scaleY } = body.bar
-    if (typeof x      === 'number') mod.bar.x      = x
-    if (typeof y      === 'number') mod.bar.y      = y
-    if (typeof scaleX === 'number') mod.bar.scaleX = scaleX
-    if (typeof scaleY === 'number') mod.bar.scaleY = scaleY
-  }
-
-  for (const key of ['title', 'value']) {
-    if (body[key] && typeof body[key] === 'object') {
-      const { x, y, fontSize } = body[key]
-      if (typeof x        === 'number') mod[key].x        = x
-      if (typeof y        === 'number') mod[key].y        = y
-      if (typeof fontSize === 'number' && fontSize > 0) mod[key].fontSize = fontSize
-    }
-  }
+  if (mod.type === 'image') return patchImage(mod, body)
+  if (mod.type === 'text') return patchText(mod, body)
+  return patchProgressBar(mod, body)
 }
 
 function patchDefaults(body) {
-  const d = state.moduleDefaults.progressBar
-  if (typeof body.label === 'string') d.label = body.label
-  if (typeof body.max   === 'number' && body.max > 0) d.max = body.max
-  if (typeof body.color === 'string') d.color = body.color
-
-  if (body.bar && typeof body.bar === 'object') {
-    const { x, y, scaleX, scaleY } = body.bar
-    if (typeof x      === 'number') d.bar.x      = x
-    if (typeof y      === 'number') d.bar.y      = y
-    if (typeof scaleX === 'number') d.bar.scaleX = scaleX
-    if (typeof scaleY === 'number') d.bar.scaleY = scaleY
+  if (body.progressBar && typeof body.progressBar === 'object') {
+    patchProgressBar(state.moduleDefaults.progressBar, body.progressBar)
+    if (typeof state.moduleDefaults.progressBar.count === 'number') delete state.moduleDefaults.progressBar.count
   }
-
-  for (const key of ['title', 'value']) {
-    if (body[key] && typeof body[key] === 'object') {
-      const { x, y, fontSize } = body[key]
-      if (typeof x        === 'number') d[key].x        = x
-      if (typeof y        === 'number') d[key].y        = y
-      if (typeof fontSize === 'number' && fontSize > 0) d[key].fontSize = fontSize
-    }
+  if (body.image && typeof body.image === 'object') {
+    patchImage(state.moduleDefaults.image, body.image)
+  }
+  if (body.text && typeof body.text === 'object') {
+    patchText(state.moduleDefaults.text, body.text)
   }
 }
 
-// ── SSE ──────────────────────────────────────────────────────
 app.get('/api/events', (req, res) => {
   res.setHeader('Content-Type', 'text/event-stream')
   res.setHeader('Cache-Control', 'no-cache')
@@ -239,7 +345,6 @@ app.get('/api/events', (req, res) => {
   req.on('error', () => clients.delete(res))
 })
 
-// ── Module defaults ───────────────────────────────────────────
 app.get('/api/defaults', (req, res) => {
   res.json(state.moduleDefaults)
 })
@@ -250,7 +355,6 @@ app.post('/api/defaults', (req, res) => {
   res.json(state.moduleDefaults)
 })
 
-// ── Overlay management endpoints ─────────────────────────────
 app.get('/api/overlays', (req, res) => {
   res.json({
     activeId: state.activeId,
@@ -262,7 +366,7 @@ app.post('/api/overlays', (req, res) => {
   const name = (typeof req.body?.name === 'string' && req.body.name.trim())
     ? req.body.name.trim()
     : `Overlay ${state.overlays.length + 1}`
-  const overlay = { id: newId(), name, modules: [newModule()] }
+  const overlay = { id: newId(), name, modules: [newModule('progressBar')] }
   state.overlays.push(overlay)
   saveState()
   broadcast()
@@ -301,11 +405,14 @@ app.post('/api/overlays/:id/activate', (req, res) => {
   res.json({ activeId: state.activeId })
 })
 
-// ── Module endpoints ──────────────────────────────────────────
 app.post('/api/overlays/:id/modules', (req, res) => {
   const overlay = getOverlay(req.params.id)
   if (!overlay) return res.status(404).json({ error: 'Overlay not found' })
-  const mod = newModule()
+  const requestedType = req.body?.type
+  if (requestedType != null && !MODULE_TYPES.has(requestedType)) {
+    return res.status(400).json({ error: 'Unsupported module type' })
+  }
+  const mod = newModule(requestedType ?? 'progressBar')
   overlay.modules.push(mod)
   saveState()
   if (overlay.id === state.activeId) broadcast()
@@ -335,7 +442,6 @@ app.patch('/api/overlays/:id/modules/:moduleId', (req, res) => {
   res.json(mod)
 })
 
-// ── State (returns modules for a given overlay) ───────────────
 app.get('/api/state', (req, res) => {
   const overlay = (req.query.id ? getOverlay(req.query.id) : null) ?? getActive()
   res.json({ modules: overlay.modules })
