@@ -1274,6 +1274,7 @@ app.post('/api/music/track-meta', (req, res) => {
 
 app.post('/api/music/import', musicImportLimiter, (req, res) => {
   const artistRaw = req.body?.artist
+  const albumRaw = req.body?.album
   const trackNameRaw = req.body?.trackName
   const trackDataUrl = req.body?.trackDataUrl
   const coverDataUrl = req.body?.coverDataUrl
@@ -1282,6 +1283,9 @@ app.post('/api/music/import', musicImportLimiter, (req, res) => {
 
   if (typeof artistRaw !== 'string' || !artistRaw.trim()) {
     return res.status(400).json({ error: 'Artist is required' })
+  }
+  if (typeof albumRaw !== 'string' || !albumRaw.trim()) {
+    return res.status(400).json({ error: 'Album is required' })
   }
   if (typeof trackNameRaw !== 'string' || !trackNameRaw.trim()) {
     return res.status(400).json({ error: 'Track name is required' })
@@ -1313,8 +1317,9 @@ app.post('/api/music/import', musicImportLimiter, (req, res) => {
   }
 
   const artist = sanitizeSegment(artistRaw, 'Unknown Artist')
+  const album = sanitizeSegment(albumRaw, 'Unknown Album')
   const trackTitle = sanitizeSegment(trackNameRaw, 'Unknown Song')
-  const albumFolder = `Imported - ${artist}`
+  const albumFolder = `${album} - ${artist}`
   const albumDir = join(MUSIC_DIR, albumFolder)
   if (!existsSync(albumDir)) mkdirSync(albumDir, { recursive: true })
 
@@ -1326,7 +1331,7 @@ app.post('/api/music/import', musicImportLimiter, (req, res) => {
     writeFileSync(coverPath, coverPayload.buffer)
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err)
-    logMusicDebug(`Import file write failed for "${trackTitle}" by ${artist}: ${detail}`, 'error')
+    logMusicDebug(`Import file write failed for "${trackTitle}" from "${album}" by ${artist}: ${detail}`, 'error')
     return res.status(500).json({ error: 'Failed to write imported files' })
   }
 
@@ -1334,7 +1339,7 @@ app.post('/api/music/import', musicImportLimiter, (req, res) => {
   const importedTrack = state.music.library.find(track => track.audioPath === toWebPath(trackPath))
   if (importedTrack) setNowPlaying(importedTrack)
   else logMusicDebug('Warning: Imported track not found in reloaded library.', 'warn')
-  logMusicDebug(`Imported track "${trackTitle}" by ${artist}.`)
+  logMusicDebug(`Imported track "${trackTitle}" from "${album}" by ${artist}.`)
   saveState()
   broadcast()
   res.status(201).json(getMusicSnapshot())

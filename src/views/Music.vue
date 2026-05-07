@@ -28,6 +28,11 @@
         </label>
 
         <label class="field">
+          <span>Album</span>
+          <input v-model="form.album" type="text" required />
+        </label>
+
+        <label class="field">
           <span>Track Name</span>
           <input v-model="form.trackName" type="text" required />
         </label>
@@ -276,6 +281,7 @@ function previewTrack(track) {
 
 const form = reactive({
   artist: '',
+  album: '',
   trackName: '',
   trackFile: null,
   coverFile: null,
@@ -434,6 +440,7 @@ async function importMusic() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         artist: form.artist,
+        album: form.album,
         trackName: form.trackName,
         trackFileName: form.trackFile.name,
         coverFileName: form.coverFile.name,
@@ -446,6 +453,7 @@ async function importMusic() {
     applyMusicSnapshot(data)
     formMessage.value = 'Track imported successfully.'
     form.artist = ''
+    form.album = ''
     form.trackName = ''
     form.trackFile = null
     form.coverFile = null
