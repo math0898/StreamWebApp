@@ -65,7 +65,7 @@
       <p class="music-help">
         Place songs and album art in
         <code>public/Music/Album Name - Artist/</code>
-        so the app can load them as <code>/Music/...</code> assets.
+        (use <code>cover.jpg</code> plus <code>.mp3/.ogg/.wav</code> files) so the app can load them as <code>/Music/...</code> assets.
       </p>
     </div>
 

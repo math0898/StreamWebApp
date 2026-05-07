@@ -36,7 +36,7 @@
 
       <transition name="now-playing-pop">
         <div v-if="shouldShowNowPlaying" class="now-playing-popup">
-          <img class="now-playing-cover" :src="music?.song?.coverPath" :alt="`Album art for ${music?.song?.album ?? 'current track'}`" />
+          <img class="now-playing-cover" :src="music?.song?.coverPath" :alt="`Album art for ${music?.song?.album ?? music?.song?.title ?? 'Unknown Album'}`" />
           <div class="now-playing-info">
             <p class="now-playing-title">{{ music?.song?.title ?? 'Unknown Song' }}</p>
             <p class="now-playing-artist">{{ music?.song?.artist ?? 'Unknown Artist' }}</p>
@@ -123,7 +123,9 @@ function textModuleStyle(mod) {
 
 function computeElapsedSec(snapshot, nowMs = Date.now()) {
   if (!snapshot) return 0
-  const pausedBase = typeof snapshot.pauseStartedAt === 'number' ? snapshot.pauseStartedAt : nowMs
+  const pausedBase = snapshot.status === 'paused'
+    ? (typeof snapshot.pauseStartedAt === 'number' ? snapshot.pauseStartedAt : snapshot.startedAt + snapshot.pausedMsTotal)
+    : nowMs
   const elapsedMs = snapshot.status === 'paused'
     ? pausedBase - snapshot.startedAt - snapshot.pausedMsTotal
     : nowMs - snapshot.startedAt - snapshot.pausedMsTotal
@@ -156,7 +158,7 @@ function syncMusic(snapshot) {
     audio.pause()
   } else {
     audio.play().catch((err) => {
-      console.warn('[overlay] Audio playback could not start automatically:', err)
+      console.warn('[overlay] Audio playback blocked by browser. Please interact with the page to enable playback.', err)
     })
   }
 }

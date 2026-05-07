@@ -215,6 +215,12 @@ function mergeMusicState(savedMusic) {
     durationSec: typeof savedMusic?.song?.durationSec === 'number' && savedMusic.song.durationSec > 0 ? savedMusic.song.durationSec : DEFAULT_SONG.durationSec,
   }
   const status = savedMusic?.playback?.status === 'paused' ? 'paused' : 'playing'
+  let pauseStartedAt = null
+  if (status === 'paused') {
+    pauseStartedAt = typeof savedMusic?.playback?.pauseStartedAt === 'number'
+      ? savedMusic.playback.pauseStartedAt
+      : Date.now()
+  }
   return {
     song: mergedSong,
     playback: {
@@ -223,9 +229,7 @@ function mergeMusicState(savedMusic) {
         ? savedMusic.playback.sequence
         : 1,
       startedAt: typeof savedMusic?.playback?.startedAt === 'number' ? savedMusic.playback.startedAt : Date.now(),
-      pauseStartedAt: status === 'paused' && typeof savedMusic?.playback?.pauseStartedAt === 'number'
-        ? savedMusic.playback.pauseStartedAt
-        : status === 'paused' ? Date.now() : null,
+      pauseStartedAt,
       pausedMsTotal: typeof savedMusic?.playback?.pausedMsTotal === 'number' && savedMusic.playback.pausedMsTotal >= 0
         ? savedMusic.playback.pausedMsTotal
         : 0,
@@ -254,6 +258,7 @@ function pauseMusic() {
 
 function resumeMusic() {
   if (state.music.playback.status !== 'paused') return false
+  if (state.music.playback.pauseStartedAt === null) return false
   const now = Date.now()
   const pausedFor = Math.max(0, now - state.music.playback.pauseStartedAt)
   state.music.playback.pausedMsTotal += pausedFor
