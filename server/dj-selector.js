@@ -39,7 +39,13 @@
  *  Step 5 – Final score
  *    score = (distance_A + distance_B) / 2
  *
- *  Steps 1–5 are repeated for every eligible candidate.
+ *  Step 6 – Variance
+ *    Shift the final score by a random number in the range (-variance, variance).
+ *    This adds controlled unpredictability while preserving the overall bias
+ *    toward the lowest-distance tracks. Lower variance is more deterministic;
+ *    higher variance is more adventurous.
+ *
+ *  Steps 1–6 are repeated for every eligible candidate.
  *  The candidate with the lowest final score is played next.
  *
  * == Inputs ==
@@ -150,6 +156,7 @@ function sharesStyle(stylesA, stylesB) {
  *   4. Target distance:     |candidate attrs – targetAttributes| per attribute (sum)
  *                           +stylePenalty if candidate shares no style with targetStyles
  *   5. Final score:         (distanceA + distanceB) / 2
+ *   6. Variance:            + random value in (-variance, variance)
  *
  * @param {Track}      candidate        The track being evaluated.
  * @param {AttrValues} candidateAttrs   Pre-computed attribute values for the candidate.
@@ -173,7 +180,13 @@ export function scoreCandidateTrack(
   djConfig,
   customAttrIds,
 ) {
-  const { likedBonus = 1, stylePenalty = 0.1, targetStyles = [], targetAttributes = {} } = djConfig
+  const {
+    likedBonus = 1,
+    stylePenalty = 0.1,
+    variance = 0,
+    targetStyles = [],
+    targetAttributes = {},
+  } = djConfig
 
   // ── Step 1: distance from current mood vector ──────────────────────────
   let distanceA = attributeDistance(candidateAttrs, currentMood, customAttrIds)
@@ -196,7 +209,11 @@ export function scoreCandidateTrack(
   }
 
   // ── Step 5: final score = average of the two distances ─────────────────
-  return (distanceA + distanceB) / 2
+  const baseScore = (distanceA + distanceB) / 2
+
+  // ── Step 6: apply a random shift in (-variance, variance) ──────────────
+  const randomShift = variance > 0 ? ((Math.random() * 2 * variance) - variance) : 0
+  return baseScore + randomShift
 }
 
 // ─── Next-track selection ────────────────────────────────────────────────────

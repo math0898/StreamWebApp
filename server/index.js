@@ -447,6 +447,7 @@ function nextTrackFromLibrary(overlayId = state.activeId) {
     const djConfig = {
       likedBonus:       djModule.likedBonus   ?? 1,
       stylePenalty:     djModule.stylePenalty  ?? 0.1,
+      variance:         djModule.variance      ?? 0,
       moodWindow:       djModule.moodWindow    ?? 5,
       minRepeats:       djModule.minRepeats    ?? 0,
       targetStyles:     djModule.targetStyles  ?? [],

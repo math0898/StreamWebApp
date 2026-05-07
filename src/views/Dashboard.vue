@@ -333,6 +333,10 @@
               <input type="number" step="0.01" min="0" :value="mod.stylePenalty" @change="patchMod(mod.id, { stylePenalty: $event.target.valueAsNumber })" />
             </div>
             <div class="edit-row">
+              <label class="edit-label">Variance</label>
+              <input type="number" step="0.01" min="0" :value="mod.variance ?? 0" @change="patchMod(mod.id, { variance: $event.target.valueAsNumber })" />
+            </div>
+            <div class="edit-row">
               <label class="edit-label">Mood Window</label>
               <input type="number" step="1" min="1" :value="mod.moodWindow" @change="patchMod(mod.id, { moodWindow: $event.target.valueAsNumber })" />
             </div>

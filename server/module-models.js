@@ -30,6 +30,7 @@ export const FACTORY_MODULE_DEFAULTS = {
     likedBonus: 1.0,
     minRepeats: 0,
     stylePenalty: 0.1,
+    variance: 0,
     moodWindow: 5,
     targetStyles: [],
     targetAttributes: {},
@@ -197,6 +198,8 @@ class DJModule extends AbstractModule {
       ? Math.floor(saved.minRepeats) : d.minRepeats
     this.stylePenalty = typeof saved?.stylePenalty === 'number' && Number.isFinite(saved.stylePenalty)
       ? saved.stylePenalty : d.stylePenalty
+    this.variance = typeof saved?.variance === 'number' && Number.isFinite(saved.variance) && saved.variance >= 0
+      ? saved.variance : d.variance
     this.moodWindow = typeof saved?.moodWindow === 'number' && saved.moodWindow >= 1
       ? Math.floor(saved.moodWindow) : d.moodWindow
     this.targetStyles = []
@@ -210,6 +213,7 @@ class DJModule extends AbstractModule {
     if (typeof patch?.likedBonus === 'number' && Number.isFinite(patch.likedBonus)) this.likedBonus = patch.likedBonus
     if (typeof patch?.minRepeats === 'number' && patch.minRepeats >= 0) this.minRepeats = Math.floor(patch.minRepeats)
     if (typeof patch?.stylePenalty === 'number' && Number.isFinite(patch.stylePenalty)) this.stylePenalty = patch.stylePenalty
+    if (typeof patch?.variance === 'number' && Number.isFinite(patch.variance) && patch.variance >= 0) this.variance = patch.variance
     if (typeof patch?.moodWindow === 'number' && patch.moodWindow >= 1) this.moodWindow = Math.floor(patch.moodWindow)
     if (Array.isArray(patch?.targetStyles)) {
       this.targetStyles = [...new Set(patch.targetStyles.filter(s => typeof s === 'string' && s.trim()))]
@@ -232,6 +236,7 @@ class DJModule extends AbstractModule {
       likedBonus: this.likedBonus,
       minRepeats: this.minRepeats,
       stylePenalty: this.stylePenalty,
+      variance: this.variance,
       moodWindow: this.moodWindow,
       targetStyles: [...this.targetStyles],
       targetAttributes: { ...this.targetAttributes },
@@ -286,6 +291,7 @@ export function newModule(type, moduleDefaults, newId) {
       likedBonus: d.likedBonus,
       minRepeats: d.minRepeats,
       stylePenalty: d.stylePenalty,
+      variance: d.variance,
       moodWindow: d.moodWindow,
       targetStyles: [],
       targetAttributes: {},
