@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="320" height="180" viewBox="0 0 320 180" role="img" aria-label="Sample module image">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#82b1ff"/>
+      <stop offset="100%" stop-color="#66bb6a"/>
+    </linearGradient>
+  </defs>
+  <rect width="320" height="180" rx="16" fill="#1e1e1e"/>
+  <rect x="10" y="10" width="300" height="160" rx="12" fill="url(#g)" opacity="0.85"/>
+  <circle cx="70" cy="90" r="34" fill="#ffffff" opacity="0.25"/>
+  <rect x="120" y="62" width="140" height="16" rx="8" fill="#ffffff" opacity="0.85"/>
+  <rect x="120" y="92" width="96" height="12" rx="6" fill="#ffffff" opacity="0.65"/>
+  <text x="160" y="145" fill="#ffffff" font-size="18" text-anchor="middle" font-family="Arial, sans-serif">Sample Image</text>
+</svg>
