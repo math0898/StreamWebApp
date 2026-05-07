@@ -2,6 +2,7 @@
   <div class="overlay">
     <div class="scene">
       <template v-for="mod in modules" :key="mod.id">
+        <template v-if="!mod.hidden">
         <div
           v-if="mod.type === 'progressBar'"
           class="progress-module"
@@ -29,6 +30,7 @@
         >
           {{ mod.text }}
         </div>
+        </template>
       </template>
     </div>
   </div>

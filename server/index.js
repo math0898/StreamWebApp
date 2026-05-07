@@ -99,6 +99,7 @@ function mergeModule(saved) {
     const merged = {
       id:        saved?.id ?? newId(),
       type:      'image',
+      hidden:    saved?.hidden === true,
       src:       typeof saved?.src === 'string' ? saved.src : d.src,
       alt:       typeof saved?.alt === 'string' ? saved.alt : d.alt,
       opacity:   typeof saved?.opacity === 'number' ? saved.opacity : d.opacity,
@@ -113,6 +114,7 @@ function mergeModule(saved) {
     const merged = {
       id:        saved?.id ?? newId(),
       type:      'text',
+      hidden:    saved?.hidden === true,
       text:      typeof saved?.text === 'string' ? saved.text : d.text,
       color:     typeof saved?.color === 'string' ? saved.color : d.color,
       transform: { ...DEFAULT_TEXT_TRANSFORM, ...(saved?.transform ?? {}) },
@@ -126,6 +128,7 @@ function mergeModule(saved) {
   const merged = {
     id:    saved?.id    ?? newId(),
     type:  'progressBar',
+    hidden: saved?.hidden === true,
     label: typeof saved?.label === 'string' ? saved.label : d.label,
     count: typeof saved?.count === 'number' ? saved.count : 0,
     max:   legacyMax && legacyMax > 0 ? legacyMax : d.max,
@@ -314,6 +317,7 @@ function broadcast() {
 }
 
 function patchModule(mod, body) {
+  if (typeof body.hidden === 'boolean') mod.hidden = body.hidden
   if (mod.type === 'image') return patchImage(mod, body)
   if (mod.type === 'text') return patchText(mod, body)
   return patchProgressBar(mod, body)

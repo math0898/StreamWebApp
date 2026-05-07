@@ -43,107 +43,118 @@
       </div>
     </div>
 
-    <div v-for="mod in modules" :key="mod.id" class="module-card">
-      <div class="module-header">
-        <span class="module-title">{{ moduleTitle(mod) }}</span>
-        <button v-if="modules.length > 1" class="action-btn action-delete" @click="removeModule(mod.id)">Remove</button>
+    <div class="module-grid">
+      <div v-for="mod in modules" :key="mod.id" class="module-card" :class="{ 'mod-is-hidden': mod.hidden }">
+
+        <!-- Card header -->
+        <div class="module-header">
+          <span class="module-title">
+            <span v-if="mod.hidden" class="hidden-badge">HIDDEN</span>
+            {{ moduleTitle(mod) }}
+          </span>
+          <div class="card-actions">
+            <button
+              class="action-btn"
+              :class="mod.hidden ? 'action-show' : 'action-hide'"
+              :title="mod.hidden ? 'Show in overlay' : 'Hide from overlay'"
+              @click="toggleHidden(mod)"
+            >{{ mod.hidden ? 'Show' : 'Hide' }}</button>
+            <button
+              class="action-btn"
+              :class="{ 'action-edit-active': editOpen[mod.id] }"
+              @click="toggleEdit(mod.id)"
+            >{{ editOpen[mod.id] ? 'Done' : 'Edit' }}</button>
+            <button v-if="modules.length > 1" class="action-btn action-delete" @click="removeModule(mod.id)">✕</button>
+          </div>
+        </div>
+
+        <!-- Always-visible: counter controls for progressBar -->
+        <div v-if="mod.type === 'progressBar'" class="counter-section">
+          <p class="count" :style="{ color: mod.color }">{{ mod.count }}</p>
+          <div class="counter-row">
+            <button class="counter-btn" @click="adjustCount(mod, -1)">−</button>
+            <input type="number" class="step-input" :value="steps[mod.id] ?? 1" @change="setStepLocal(mod.id, $event.target.value)" title="Step size" />
+            <button class="counter-btn" @click="adjustCount(mod, +1)">+</button>
+          </div>
+          <div class="counter-row">
+            <input type="number" class="set-input" placeholder="Set value…" :value="setVals[mod.id] ?? ''" @input="updateSetVal(mod.id, $event.target.value)" @keyup.enter="setCount(mod)" />
+            <button class="counter-btn-sm" @click="setCount(mod)">Set</button>
+            <button class="counter-btn-sm reset" @click="patchMod(mod.id, { count: 0 })">Reset</button>
+          </div>
+        </div>
+
+        <!-- Edit panel (all types) -->
+        <div v-if="editOpen[mod.id]" class="edit-panel">
+
+          <template v-if="mod.type === 'progressBar'">
+            <div class="edit-row">
+              <label class="edit-label">Goal</label>
+              <input type="number" min="1" :value="mod.max" @change="patchMod(mod.id, { max: $event.target.valueAsNumber })" />
+              <button class="reset-sm" @click="patchMod(mod.id, { max: 100 })">↺</button>
+            </div>
+            <div class="edit-row">
+              <label class="edit-label">Label</label>
+              <input type="text" :value="mod.label" @change="patchMod(mod.id, { label: $event.target.value })" />
+            </div>
+            <div class="edit-row">
+              <label class="edit-label">Color</label>
+              <input type="color" :value="mod.color" @input="patchMod(mod.id, { color: $event.target.value })" />
+            </div>
+            <p class="edit-sub">Bar</p>
+            <div v-for="f in barFields" :key="mod.id+'b'+f.key" class="edit-row">
+              <label class="edit-label">{{ f.label }}</label>
+              <input type="number" :step="f.step" :value="mod.bar[f.key]" @change="patchMod(mod.id, { bar: { [f.key]: $event.target.valueAsNumber } })" />
+            </div>
+            <p class="edit-sub">Title</p>
+            <div v-for="f in titleFields" :key="mod.id+'t'+f.key" class="edit-row">
+              <label class="edit-label">{{ f.label }}</label>
+              <input type="number" :step="f.step" :value="mod.title[f.key]" @change="patchMod(mod.id, { title: { [f.key]: $event.target.valueAsNumber } })" />
+            </div>
+            <p class="edit-sub">Value</p>
+            <div v-for="f in valueFields" :key="mod.id+'v'+f.key" class="edit-row">
+              <label class="edit-label">{{ f.label }}</label>
+              <input type="number" :step="f.step" :value="mod.value[f.key]" @change="patchMod(mod.id, { value: { [f.key]: $event.target.valueAsNumber } })" />
+            </div>
+          </template>
+
+          <template v-else-if="mod.type === 'image'">
+            <div class="edit-row">
+              <label class="edit-label">Image Path</label>
+              <input type="text" class="wide-input" :value="mod.src" @change="patchMod(mod.id, { src: $event.target.value })" />
+            </div>
+            <div class="edit-row">
+              <label class="edit-label">Alt Text</label>
+              <input type="text" class="wide-input" :value="mod.alt" @change="patchMod(mod.id, { alt: $event.target.value })" />
+            </div>
+            <div class="edit-row">
+              <label class="edit-label">Opacity</label>
+              <input type="number" step="0.1" min="0" max="1" :value="mod.opacity" @change="patchMod(mod.id, { opacity: $event.target.valueAsNumber })" />
+            </div>
+            <p class="edit-sub">Transform</p>
+            <div v-for="f in transformFields" :key="mod.id+'i'+f.key" class="edit-row">
+              <label class="edit-label">{{ f.label }}</label>
+              <input type="number" :step="f.step" :value="mod.transform[f.key]" @change="patchMod(mod.id, { transform: { [f.key]: $event.target.valueAsNumber } })" />
+            </div>
+          </template>
+
+          <template v-else-if="mod.type === 'text'">
+            <div class="edit-row">
+              <label class="edit-label">Text</label>
+              <input type="text" class="wide-input" :value="mod.text" @change="patchMod(mod.id, { text: $event.target.value })" />
+            </div>
+            <div class="edit-row">
+              <label class="edit-label">Color</label>
+              <input type="color" :value="mod.color" @input="patchMod(mod.id, { color: $event.target.value })" />
+            </div>
+            <p class="edit-sub">Transform</p>
+            <div v-for="f in textTransformFields" :key="mod.id+'x'+f.key" class="edit-row">
+              <label class="edit-label">{{ f.label }}</label>
+              <input type="number" :step="f.step" :value="mod.transform[f.key]" @change="patchMod(mod.id, { transform: { [f.key]: $event.target.valueAsNumber } })" />
+            </div>
+          </template>
+
+        </div>
       </div>
-
-      <section v-if="mod.type === 'progressBar'" class="section">
-        <h2 class="section-title">Counts</h2>
-        <p class="count">{{ mod.count }}</p>
-
-        <div class="row">
-          <button @click="adjustCount(mod, -1)">−</button>
-          <input type="number" class="step-input" :value="steps[mod.id] ?? 1" @change="setStepLocal(mod.id, $event.target.value)" title="Step size" />
-          <button @click="adjustCount(mod, +1)">+</button>
-        </div>
-
-        <div class="row">
-          <input type="number" class="set-input" placeholder="Set value…" :value="setVals[mod.id] ?? ''" @input="updateSetVal(mod.id, $event.target.value)" @keyup.enter="setCount(mod)" />
-          <button @click="setCount(mod)">Set</button>
-          <button class="reset" @click="patchMod(mod.id, { count: 0 })">Reset</button>
-        </div>
-
-        <div class="row">
-          <label class="field-label">Goal</label>
-          <input type="number" min="1" :value="mod.max" @change="patchMod(mod.id, { max: $event.target.valueAsNumber })" />
-          <button class="reset-sm" @click="patchMod(mod.id, { max: 100 })">Reset</button>
-        </div>
-
-        <div class="row">
-          <label class="field-label">Label</label>
-          <input type="text" :value="mod.label" @change="patchMod(mod.id, { label: $event.target.value })" />
-        </div>
-
-        <div class="row">
-          <label class="field-label">Color</label>
-          <input type="color" :value="mod.color" @input="patchMod(mod.id, { color: $event.target.value })" />
-        </div>
-
-        <p class="sub-title">Bar</p>
-        <div v-for="f in barFields" :key="mod.id+'b'+f.key" class="row">
-          <label class="field-label">{{ f.label }}</label>
-          <input type="number" :step="f.step" :value="mod.bar[f.key]" @change="patchMod(mod.id, { bar: { [f.key]: $event.target.valueAsNumber } })" />
-        </div>
-
-        <p class="sub-title">Title</p>
-        <div v-for="f in titleFields" :key="mod.id+'t'+f.key" class="row">
-          <label class="field-label">{{ f.label }}</label>
-          <input type="number" :step="f.step" :value="mod.title[f.key]" @change="patchMod(mod.id, { title: { [f.key]: $event.target.valueAsNumber } })" />
-        </div>
-
-        <p class="sub-title">Value</p>
-        <div v-for="f in valueFields" :key="mod.id+'v'+f.key" class="row">
-          <label class="field-label">{{ f.label }}</label>
-          <input type="number" :step="f.step" :value="mod.value[f.key]" @change="patchMod(mod.id, { value: { [f.key]: $event.target.valueAsNumber } })" />
-        </div>
-      </section>
-
-      <section v-else-if="mod.type === 'image'" class="section">
-        <h2 class="section-title">Image</h2>
-
-        <div class="row">
-          <label class="field-label">Image Path</label>
-          <input type="text" class="wide-input" :value="mod.src" @change="patchMod(mod.id, { src: $event.target.value })" />
-        </div>
-
-        <div class="row">
-          <label class="field-label">Alt Text</label>
-          <input type="text" class="wide-input" :value="mod.alt" @change="patchMod(mod.id, { alt: $event.target.value })" />
-        </div>
-
-        <div class="row">
-          <label class="field-label">Opacity</label>
-          <input type="number" step="0.1" min="0" max="1" :value="mod.opacity" @change="patchMod(mod.id, { opacity: $event.target.valueAsNumber })" />
-        </div>
-
-        <p class="sub-title">Transform</p>
-        <div v-for="f in transformFields" :key="mod.id+'i'+f.key" class="row">
-          <label class="field-label">{{ f.label }}</label>
-          <input type="number" :step="f.step" :value="mod.transform[f.key]" @change="patchMod(mod.id, { transform: { [f.key]: $event.target.valueAsNumber } })" />
-        </div>
-      </section>
-
-      <section v-else-if="mod.type === 'text'" class="section">
-        <h2 class="section-title">Text</h2>
-
-        <div class="row">
-          <label class="field-label">Text</label>
-          <input type="text" class="wide-input" :value="mod.text" @change="patchMod(mod.id, { text: $event.target.value })" />
-        </div>
-
-        <div class="row">
-          <label class="field-label">Color</label>
-          <input type="color" :value="mod.color" @input="patchMod(mod.id, { color: $event.target.value })" />
-        </div>
-
-        <p class="sub-title">Transform</p>
-        <div v-for="f in textTransformFields" :key="mod.id+'x'+f.key" class="row">
-          <label class="field-label">{{ f.label }}</label>
-          <input type="number" :step="f.step" :value="mod.transform[f.key]" @change="patchMod(mod.id, { transform: { [f.key]: $event.target.valueAsNumber } })" />
-        </div>
-      </section>
     </div>
 
     <div class="add-module-row">
@@ -172,6 +183,7 @@ const renameInputRef = ref(null)
 const modules = ref([])
 const steps   = reactive({})
 const setVals = reactive({})
+const editOpen = reactive({})
 
 const newModuleType = ref('progressBar')
 
@@ -211,13 +223,26 @@ function moduleTitle(mod) {
   return mod.label || 'ProgressBar Module'
 }
 
+function toggleEdit(modId) {
+  editOpen[modId] = !editOpen[modId]
+}
+
+async function toggleHidden(mod) {
+  await patchMod(mod.id, { hidden: !mod.hidden })
+}
+
 function applyModules(newModules) {
+  const newIds = new Set(newModules.map(m => m.id))
+  for (const key of Object.keys(editOpen)) {
+    if (!newIds.has(key)) delete editOpen[key]
+  }
   modules.value = newModules
   for (const key of Object.keys(steps)) delete steps[key]
   for (const key of Object.keys(setVals)) delete setVals[key]
   for (const mod of newModules) {
     steps[mod.id] = 1
     setVals[mod.id] = ''
+    if (editOpen[mod.id] === undefined) editOpen[mod.id] = false
   }
 }
 
@@ -358,6 +383,7 @@ async function addModule() {
     modules.value.push(mod)
     steps[mod.id] = 1
     setVals[mod.id] = ''
+    editOpen[mod.id] = false
   } catch (err) {
     console.warn('[dashboard] Failed to add module:', err)
   }
@@ -406,7 +432,7 @@ function updateSetVal(modId, val) {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 2.5rem 1.5rem;
+  padding: 2rem 1.5rem 3rem;
   font-family: sans-serif;
   overflow-y: auto;
   box-sizing: border-box;
@@ -418,9 +444,10 @@ h1 {
   color: #ffffff;
 }
 
+/* ── Overlay nav ─────────────────────────────────────── */
 .overlay-nav {
   width: 100%;
-  max-width: 640px;
+  max-width: 720px;
   margin-bottom: 1.5rem;
 }
 
@@ -462,7 +489,7 @@ h1 {
 
 .action-btn {
   font-size: 0.78rem;
-  padding: 0.28rem 0.65rem;
+  padding: 0.22rem 0.55rem;
   background: #1e1e1e;
   color: #9e9e9e;
   border: 1px solid #3a3a3a;
@@ -475,6 +502,11 @@ h1 {
 .action-activate:hover    { background: #1a2e1c; }
 .action-delete            { color: #ef9a9a; border-color: #614040; }
 .action-delete:hover      { background: #2a1a1a; }
+.action-hide              { color: #9e9e9e; }
+.action-show              { color: #ffd54f; border-color: #5c4a1a; }
+.action-show:hover        { background: #2a240f; }
+.action-edit-active       { color: #82b1ff; border-color: #2a4070; background: #141e33; }
+.action-edit-active:hover { background: #182340; }
 
 .overlay-rename-row {
   display: flex;
@@ -493,34 +525,230 @@ h1 {
   width: 12rem;
 }
 
-.module-card {
+/* ── Module grid ─────────────────────────────────────── */
+.module-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  justify-content: center;
   width: 100%;
-  max-width: 640px;
-  border: 1px solid #2a2a2a;
-  border-radius: 8px;
   margin-bottom: 1rem;
-  padding: 0 1rem;
 }
 
+.module-card {
+  flex: 0 0 300px;
+  border: 1px solid #2a2a2a;
+  border-radius: 10px;
+  padding: 0 0.85rem 0.85rem;
+  transition: opacity 0.2s, border-color 0.2s;
+}
+
+.mod-is-hidden {
+  opacity: 0.5;
+  border-color: #1e1e1e;
+}
+
+/* ── Card header ─────────────────────────────────────── */
 .module-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0.75rem 0 0.5rem;
+  padding: 0.65rem 0 0.5rem;
   border-bottom: 1px solid #2a2a2a;
+  gap: 0.4rem;
+  min-width: 0;
 }
 
 .module-title {
-  font-size: 0.8rem;
+  font-size: 0.78rem;
   font-weight: 600;
   color: #bdbdbd;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.07em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
 }
 
-.add-module-row {
+.hidden-badge {
+  display: inline-block;
+  font-size: 0.65rem;
+  color: #ffd54f;
+  background: #2a240f;
+  border: 1px solid #5c4a1a;
+  border-radius: 4px;
+  padding: 0.05rem 0.3rem;
+  margin-right: 0.3rem;
+  vertical-align: middle;
+  letter-spacing: 0.05em;
+}
+
+.card-actions {
+  display: flex;
+  gap: 0.3rem;
+  flex-shrink: 0;
+}
+
+/* ── Counter section (progressBar always-visible) ────── */
+.counter-section {
+  padding: 0.7rem 0 0.3rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.count {
+  font-size: 3rem;
+  font-weight: bold;
+  margin: 0;
+  line-height: 1;
+  color: #82b1ff;
+}
+
+.counter-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
   width: 100%;
-  max-width: 640px;
+  justify-content: center;
+}
+
+.counter-btn {
+  background-color: #1e1e1e;
+  color: #e0e0e0;
+  border: 1px solid #424242;
+  border-radius: 6px;
+  padding: 0.4rem 0.9rem;
+  font-size: 1.1rem;
+  cursor: pointer;
+  transition: background-color 0.15s;
+  line-height: 1;
+}
+.counter-btn:hover  { background-color: #2c2c2c; }
+.counter-btn:active { background-color: #383838; }
+
+.counter-btn-sm {
+  background-color: #1e1e1e;
+  color: #e0e0e0;
+  border: 1px solid #424242;
+  border-radius: 6px;
+  padding: 0.3rem 0.65rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+.counter-btn-sm:hover  { background-color: #2c2c2c; }
+.counter-btn-sm.reset  { color: #ef9a9a; border-color: #614040; }
+.counter-btn-sm.reset:hover { background-color: #2a1a1a; }
+
+.step-input {
+  background-color: #1e1e1e;
+  color: #e0e0e0;
+  border: 1px solid #424242;
+  border-radius: 6px;
+  padding: 0.35rem 0.4rem;
+  font-size: 0.9rem;
+  width: 3.8rem;
+  text-align: center;
+}
+
+.set-input {
+  background-color: #1e1e1e;
+  color: #e0e0e0;
+  border: 1px solid #424242;
+  border-radius: 6px;
+  padding: 0.35rem 0.65rem;
+  font-size: 0.9rem;
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+}
+
+/* ── Edit panel ──────────────────────────────────────── */
+.edit-panel {
+  padding: 0.6rem 0 0;
+  border-top: 1px solid #2a2a2a;
+  margin-top: 0.55rem;
+}
+
+.edit-row {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-bottom: 0.45rem;
+}
+
+.edit-label {
+  font-size: 0.8rem;
+  color: #9e9e9e;
+  width: 5rem;
+  flex-shrink: 0;
+}
+
+.edit-sub {
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #424242;
+  margin: 0.55rem 0 0.3rem;
+}
+
+input[type='number'] {
+  background-color: #1e1e1e;
+  color: #e0e0e0;
+  border: 1px solid #424242;
+  border-radius: 6px;
+  padding: 0.3rem 0.5rem;
+  font-size: 0.85rem;
+  width: 6.5rem;
+  text-align: center;
+}
+
+input[type='text'] {
+  background-color: #1e1e1e;
+  color: #e0e0e0;
+  border: 1px solid #424242;
+  border-radius: 6px;
+  padding: 0.3rem 0.5rem;
+  font-size: 0.85rem;
+  width: 8rem;
+  text-align: left;
+}
+
+.wide-input {
+  flex: 1;
+  min-width: 0;
+  width: auto !important;
+}
+
+input[type='color'] {
+  background-color: #1e1e1e;
+  border: 1px solid #424242;
+  border-radius: 6px;
+  width: 3rem;
+  height: 1.9rem;
+  padding: 0.1rem;
+  cursor: pointer;
+}
+
+.reset-sm {
+  background: #1e1e1e;
+  color: #9e9e9e;
+  border: 1px solid #3a3a3a;
+  border-radius: 6px;
+  padding: 0.2rem 0.45rem;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.reset-sm:hover { background: #1a1a1a; }
+
+/* ── Add module row ──────────────────────────────────── */
+.add-module-row {
   display: flex;
   gap: 0.6rem;
   justify-content: center;
@@ -547,123 +775,6 @@ h1 {
   transition: background 0.15s;
 }
 .add-module-btn:hover { background: #1a2e1c; }
-
-.section {
-  width: 100%;
-  border-top: 1px solid #2a2a2a;
-  padding: 1.25rem 0;
-}
-
-.section-title {
-  font-size: 0.75rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: #616161;
-  margin: 0 0 1rem;
-}
-
-.sub-title {
-  font-size: 0.7rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: #424242;
-  margin: 0.75rem 0 0.35rem;
-}
-
-.row {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  margin-bottom: 0.5rem;
-}
-
-.field-label {
-  font-size: 0.85rem;
-  color: #9e9e9e;
-  width: 5.9rem;
-  flex-shrink: 0;
-}
-
-input[type='number'],
-input[type='text'] {
-  background-color: #1e1e1e;
-  color: #e0e0e0;
-  border: 1px solid #424242;
-  border-radius: 6px;
-  padding: 0.35rem 0.65rem;
-  font-size: 0.9rem;
-  width: 8rem;
-  text-align: center;
-}
-
-input[type='text'] {
-  text-align: left;
-  width: 12rem;
-}
-
-.wide-input {
-  flex: 1;
-  min-width: 0;
-}
-
-input[type='color'] {
-  background-color: #1e1e1e;
-  border: 1px solid #424242;
-  border-radius: 6px;
-  width: 3rem;
-  height: 2rem;
-  padding: 0.15rem;
-  cursor: pointer;
-}
-
-.step-input {
-  width: 4rem !important;
-}
-
-.set-input {
-  flex: 1;
-  min-width: 0;
-  text-align: left !important;
-}
-
-.count {
-  font-size: 3.5rem;
-  font-weight: bold;
-  margin: 0 0 0.5rem;
-  color: #82b1ff;
-  line-height: 1;
-}
-
-button {
-  background-color: #1e1e1e;
-  color: #e0e0e0;
-  border: 1px solid #424242;
-  border-radius: 6px;
-  padding: 0.5rem 1.2rem;
-  font-size: 1.1rem;
-  cursor: pointer;
-  transition: background-color 0.15s;
-}
-
-button:hover  { background-color: #2c2c2c; }
-button:active { background-color: #383838; }
-
-button.reset {
-  font-size: 0.9rem;
-  color: #ef9a9a;
-  border-color: #614040;
-}
-button.reset:hover { background-color: #2a1a1a; }
-
-.reset-sm {
-  font-size: 0.75rem;
-  padding: 0.3rem 0.65rem;
-  color: #9e9e9e;
-  border-color: #3a3a3a;
-}
-.reset-sm:hover { background-color: #1a1a1a; }
 
 .hint {
   font-size: 0.8rem;
