@@ -6,69 +6,136 @@ import { randomUUID } from 'crypto'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const DATA_FILE = join(__dirname, 'data.json')
+
 const DEFAULT_BAR   = { x: 0, y: 0, scaleX: 1, scaleY: 1 }
 const DEFAULT_TITLE = { x: 0, y: 0, fontSize: 16 }
 const DEFAULT_VALUE = { x: 0, y: 0, fontSize: 14 }
 
+const FACTORY_MODULE_DEFAULTS = {
+  progressBar: {
+    label: 'Counter',
+    max:   100,
+    color: '#82b1ff',
+    bar:   { ...DEFAULT_BAR },
+    title: { ...DEFAULT_TITLE },
+    value: { ...DEFAULT_VALUE },
+  },
+}
+
 function newId() { return randomUUID().slice(0, 8) }
 
-function makeOverlay(name = 'Default', id = null) {
+// Merge a saved module with hard-coded defaults (used during loadState)
+function mergeModule(saved) {
+  const d = FACTORY_MODULE_DEFAULTS.progressBar
   return {
-    id:     id ?? newId(),
-    name,
-    count1: 0,
-    count2: 0,
-    max1:   100,
-    max2:   100,
-    label1: 'Counter 1',
-    label2: 'Counter 2',
-    color1: '#82b1ff',
-    color2: '#a5d6a7',
-    bar1:   { ...DEFAULT_BAR },
-    bar2:   { ...DEFAULT_BAR },
-    title1: { ...DEFAULT_TITLE },
-    title2: { ...DEFAULT_TITLE },
-    value1: { ...DEFAULT_VALUE },
-    value2: { ...DEFAULT_VALUE },
+    id:    saved.id    ?? newId(),
+    type:  saved.type  ?? 'progressBar',
+    label: saved.label ?? d.label,
+    count: typeof saved.count === 'number' ? saved.count : 0,
+    max:   typeof saved.max === 'number' && saved.max > 0 ? saved.max : d.max,
+    color: saved.color ?? d.color,
+    bar:   { ...DEFAULT_BAR,   ...(saved.bar   ?? {}) },
+    title: { ...DEFAULT_TITLE, ...(saved.title ?? {}) },
+    value: { ...DEFAULT_VALUE, ...(saved.value ?? {}) },
   }
 }
 
-function mergeOverlay(saved) {
-  const legacyMax = typeof saved.max === 'number' ? saved.max : undefined
+// Create a brand-new module using the current state's module defaults
+function newModule() {
+  const d = state.moduleDefaults.progressBar
   return {
-    ...makeOverlay(saved.name, saved.id),
-    ...saved,
-    id:     saved.id     ?? newId(),
-    name:   saved.name   ?? 'Default',
-    max1:   saved.max1   ?? legacyMax ?? 100,
-    max2:   saved.max2   ?? legacyMax ?? 100,
-    bar1:   { ...DEFAULT_BAR,   ...(saved.bar1   ?? {}) },
-    bar2:   { ...DEFAULT_BAR,   ...(saved.bar2   ?? {}) },
-    title1: { ...DEFAULT_TITLE, ...(saved.title1 ?? {}) },
-    title2: { ...DEFAULT_TITLE, ...(saved.title2 ?? {}) },
-    value1: { ...DEFAULT_VALUE, ...(saved.value1 ?? {}) },
-    value2: { ...DEFAULT_VALUE, ...(saved.value2 ?? {}) },
+    id:    newId(),
+    type:  'progressBar',
+    label: d.label,
+    count: 0,
+    max:   d.max,
+    color: d.color,
+    bar:   { ...DEFAULT_BAR,   ...d.bar   },
+    title: { ...DEFAULT_TITLE, ...d.title },
+    value: { ...DEFAULT_VALUE, ...d.value },
+  }
+}
+
+// Merge saved moduleDefaults with factory defaults
+function mergeModuleDefaults(saved) {
+  const d = saved?.progressBar ?? {}
+  return {
+    progressBar: {
+      label: d.label ?? FACTORY_MODULE_DEFAULTS.progressBar.label,
+      max:   typeof d.max === 'number' && d.max > 0 ? d.max : FACTORY_MODULE_DEFAULTS.progressBar.max,
+      color: d.color ?? FACTORY_MODULE_DEFAULTS.progressBar.color,
+      bar:   { ...DEFAULT_BAR,   ...(d.bar   ?? {}) },
+      title: { ...DEFAULT_TITLE, ...(d.title ?? {}) },
+      value: { ...DEFAULT_VALUE, ...(d.value ?? {}) },
+    },
+  }
+}
+
+// Migrate a legacy overlay (flat fields) into the module-based format
+function migrateOverlay(saved) {
+  const legacyMax = typeof saved.max === 'number' ? saved.max : undefined
+  const overlayId = saved.id ?? 'default'
+  return {
+    id:      overlayId,
+    name:    saved.name ?? 'Default',
+    modules: [
+      mergeModule({
+        id:    `${overlayId}-m1`,
+        label: saved.label1 ?? 'Counter 1',
+        count: saved.count1 ?? 0,
+        max:   saved.max1 ?? legacyMax ?? FACTORY_MODULE_DEFAULTS.progressBar.max,
+        color: saved.color1 ?? '#82b1ff',
+        bar:   saved.bar1   ?? {},
+        title: saved.title1 ?? {},
+        value: saved.value1 ?? {},
+      }),
+      mergeModule({
+        id:    `${overlayId}-m2`,
+        label: saved.label2 ?? 'Counter 2',
+        count: saved.count2 ?? 0,
+        max:   saved.max2 ?? legacyMax ?? FACTORY_MODULE_DEFAULTS.progressBar.max,
+        color: saved.color2 ?? '#a5d6a7',
+        bar:   saved.bar2   ?? {},
+        title: saved.title2 ?? {},
+        value: saved.value2 ?? {},
+      }),
+    ],
   }
 }
 
 function loadState() {
   try {
-    const saved = JSON.parse(readFileSync(DATA_FILE, 'utf8'))
+    const saved          = JSON.parse(readFileSync(DATA_FILE, 'utf8'))
+    const moduleDefaults = mergeModuleDefaults(saved.moduleDefaults)
+    let overlays, activeId
+
     if (Array.isArray(saved.overlays) && saved.overlays.length > 0) {
-      // New multi-overlay format
-      const overlays = saved.overlays.map(mergeOverlay)
-      const activeId = overlays.find(o => o.id === saved.activeId)
-        ? saved.activeId
-        : overlays[0].id
-      return { activeId, overlays }
+      overlays = saved.overlays.map(o =>
+        Array.isArray(o.modules)
+          ? { id: o.id ?? newId(), name: o.name ?? 'Default', modules: o.modules.map(mergeModule) }
+          : migrateOverlay(o)
+      )
+      activeId = overlays.find(o => o.id === saved.activeId) ? saved.activeId : overlays[0].id
     } else {
-      // Legacy single-overlay format: migrate to multi-overlay
-      const overlay = mergeOverlay({ ...saved, id: 'default', name: 'Default' })
-      return { activeId: 'default', overlays: [overlay] }
+      // Completely legacy flat format
+      overlays = [migrateOverlay({ ...saved, id: 'default', name: 'Default' })]
+      activeId = 'default'
     }
+
+    return { activeId, moduleDefaults, overlays }
   } catch {
-    const overlay = makeOverlay('Default', 'default')
-    return { activeId: 'default', overlays: [overlay] }
+    return {
+      activeId:       'default',
+      moduleDefaults: mergeModuleDefaults(null),
+      overlays: [{
+        id:   'default',
+        name: 'Default',
+        modules: [
+          mergeModule({ id: 'default-m1', label: 'Counter 1', color: '#82b1ff' }),
+          mergeModule({ id: 'default-m2', label: 'Counter 2', color: '#a5d6a7' }),
+        ],
+      }],
+    }
   }
 }
 
@@ -96,13 +163,12 @@ function getActive() {
   return getOverlay(state.activeId) ?? state.overlays[0]
 }
 
-// SSE payload: active overlay fields + metadata (activeId, overlay list)
 function buildPayload() {
-  const { id: _id, name: _name, ...fields } = getActive()
+  const active = getActive()
   return JSON.stringify({
     activeId: state.activeId,
     overlays: state.overlays.map(o => ({ id: o.id, name: o.name })),
-    ...fields,
+    modules:  active.modules,
   })
 }
 
@@ -111,41 +177,55 @@ function broadcast() {
   for (const client of clients) client.write(payload)
 }
 
-// Apply a partial state patch onto an overlay object
-function applyPatch(overlay, body) {
-  const { count1, count2, max1, max2, label1, label2, color1, color2 } = body
-  if (typeof count1 === 'number') overlay.count1 = count1
-  if (typeof count2 === 'number') overlay.count2 = count2
-  if (typeof max1   === 'number' && max1 > 0) overlay.max1 = max1
-  if (typeof max2   === 'number' && max2 > 0) overlay.max2 = max2
-  if (typeof label1 === 'string') overlay.label1 = label1
-  if (typeof label2 === 'string') overlay.label2 = label2
-  if (typeof color1 === 'string') overlay.color1 = color1
-  if (typeof color2 === 'string') overlay.color2 = color2
+function patchModule(mod, body) {
+  if (typeof body.label === 'string') mod.label = body.label
+  if (typeof body.count === 'number') mod.count = body.count
+  if (typeof body.max   === 'number' && body.max > 0) mod.max = body.max
+  if (typeof body.color === 'string') mod.color = body.color
 
-  for (const key of ['bar1', 'bar2']) {
-    const obj = body[key]
-    if (obj && typeof obj === 'object') {
-      const { x, y, scaleX, scaleY } = obj
-      if (typeof x      === 'number') overlay[key].x      = x
-      if (typeof y      === 'number') overlay[key].y      = y
-      if (typeof scaleX === 'number') overlay[key].scaleX = scaleX
-      if (typeof scaleY === 'number') overlay[key].scaleY = scaleY
-    }
+  if (body.bar && typeof body.bar === 'object') {
+    const { x, y, scaleX, scaleY } = body.bar
+    if (typeof x      === 'number') mod.bar.x      = x
+    if (typeof y      === 'number') mod.bar.y      = y
+    if (typeof scaleX === 'number') mod.bar.scaleX = scaleX
+    if (typeof scaleY === 'number') mod.bar.scaleY = scaleY
   }
 
-  for (const key of ['title1', 'title2', 'value1', 'value2']) {
-    const obj = body[key]
-    if (obj && typeof obj === 'object') {
-      const { x, y, fontSize } = obj
-      if (typeof x        === 'number') overlay[key].x        = x
-      if (typeof y        === 'number') overlay[key].y        = y
-      if (typeof fontSize === 'number' && fontSize > 0) overlay[key].fontSize = fontSize
+  for (const key of ['title', 'value']) {
+    if (body[key] && typeof body[key] === 'object') {
+      const { x, y, fontSize } = body[key]
+      if (typeof x        === 'number') mod[key].x        = x
+      if (typeof y        === 'number') mod[key].y        = y
+      if (typeof fontSize === 'number' && fontSize > 0) mod[key].fontSize = fontSize
     }
   }
 }
 
-// ── SSE endpoint ─────────────────────────────────────────────
+function patchDefaults(body) {
+  const d = state.moduleDefaults.progressBar
+  if (typeof body.label === 'string') d.label = body.label
+  if (typeof body.max   === 'number' && body.max > 0) d.max = body.max
+  if (typeof body.color === 'string') d.color = body.color
+
+  if (body.bar && typeof body.bar === 'object') {
+    const { x, y, scaleX, scaleY } = body.bar
+    if (typeof x      === 'number') d.bar.x      = x
+    if (typeof y      === 'number') d.bar.y      = y
+    if (typeof scaleX === 'number') d.bar.scaleX = scaleX
+    if (typeof scaleY === 'number') d.bar.scaleY = scaleY
+  }
+
+  for (const key of ['title', 'value']) {
+    if (body[key] && typeof body[key] === 'object') {
+      const { x, y, fontSize } = body[key]
+      if (typeof x        === 'number') d[key].x        = x
+      if (typeof y        === 'number') d[key].y        = y
+      if (typeof fontSize === 'number' && fontSize > 0) d[key].fontSize = fontSize
+    }
+  }
+}
+
+// ── SSE ──────────────────────────────────────────────────────
 app.get('/api/events', (req, res) => {
   res.setHeader('Content-Type', 'text/event-stream')
   res.setHeader('Cache-Control', 'no-cache')
@@ -159,9 +239,18 @@ app.get('/api/events', (req, res) => {
   req.on('error', () => clients.delete(res))
 })
 
-// ── Overlay management endpoints ─────────────────────────────
+// ── Module defaults ───────────────────────────────────────────
+app.get('/api/defaults', (req, res) => {
+  res.json(state.moduleDefaults)
+})
 
-// GET /api/overlays — list all overlays and the active id
+app.post('/api/defaults', (req, res) => {
+  patchDefaults(req.body ?? {})
+  saveState()
+  res.json(state.moduleDefaults)
+})
+
+// ── Overlay management endpoints ─────────────────────────────
 app.get('/api/overlays', (req, res) => {
   res.json({
     activeId: state.activeId,
@@ -169,23 +258,19 @@ app.get('/api/overlays', (req, res) => {
   })
 })
 
-// POST /api/overlays — create a new overlay
 app.post('/api/overlays', (req, res) => {
   const name = (typeof req.body?.name === 'string' && req.body.name.trim())
     ? req.body.name.trim()
     : `Overlay ${state.overlays.length + 1}`
-  const overlay = makeOverlay(name)
+  const overlay = { id: newId(), name, modules: [newModule()] }
   state.overlays.push(overlay)
   saveState()
   broadcast()
   res.status(201).json({ id: overlay.id, name: overlay.name })
 })
 
-// DELETE /api/overlays/:id — delete an overlay (must keep at least one)
 app.delete('/api/overlays/:id', (req, res) => {
-  if (state.overlays.length <= 1) {
-    return res.status(400).json({ error: 'Cannot delete the last overlay' })
-  }
+  if (state.overlays.length <= 1) return res.status(400).json({ error: 'Cannot delete the last overlay' })
   const idx = state.overlays.findIndex(o => o.id === req.params.id)
   if (idx === -1) return res.status(404).json({ error: 'Overlay not found' })
   const wasActive = state.activeId === req.params.id
@@ -199,19 +284,15 @@ app.delete('/api/overlays/:id', (req, res) => {
   })
 })
 
-// PATCH /api/overlays/:id — rename an overlay
 app.patch('/api/overlays/:id', (req, res) => {
   const overlay = getOverlay(req.params.id)
   if (!overlay) return res.status(404).json({ error: 'Overlay not found' })
-  if (typeof req.body?.name === 'string' && req.body.name.trim()) {
-    overlay.name = req.body.name.trim()
-  }
+  if (typeof req.body?.name === 'string' && req.body.name.trim()) overlay.name = req.body.name.trim()
   saveState()
   broadcast()
   res.json({ id: overlay.id, name: overlay.name })
 })
 
-// POST /api/overlays/:id/activate — set the active (live) overlay
 app.post('/api/overlays/:id/activate', (req, res) => {
   if (!getOverlay(req.params.id)) return res.status(404).json({ error: 'Overlay not found' })
   state.activeId = req.params.id
@@ -220,23 +301,44 @@ app.post('/api/overlays/:id/activate', (req, res) => {
   res.json({ activeId: state.activeId })
 })
 
-// ── State endpoints ───────────────────────────────────────────
-
-// GET /api/state?id=xxx — return an overlay's content fields
-app.get('/api/state', (req, res) => {
-  const overlay = (req.query.id ? getOverlay(req.query.id) : null) ?? getActive()
-  const { id: _id, name: _name, ...fields } = overlay
-  res.json(fields)
-})
-
-// POST /api/state?id=xxx — patch an overlay's content fields
-app.post('/api/state', (req, res) => {
-  const overlay = (req.query.id ? getOverlay(req.query.id) : null) ?? getActive()
-  applyPatch(overlay, req.body ?? {})
+// ── Module endpoints ──────────────────────────────────────────
+app.post('/api/overlays/:id/modules', (req, res) => {
+  const overlay = getOverlay(req.params.id)
+  if (!overlay) return res.status(404).json({ error: 'Overlay not found' })
+  const mod = newModule()
+  overlay.modules.push(mod)
   saveState()
   if (overlay.id === state.activeId) broadcast()
-  const { id: _id, name: _name, ...fields } = overlay
-  res.json(fields)
+  res.status(201).json(mod)
+})
+
+app.delete('/api/overlays/:id/modules/:moduleId', (req, res) => {
+  const overlay = getOverlay(req.params.id)
+  if (!overlay) return res.status(404).json({ error: 'Overlay not found' })
+  if (overlay.modules.length <= 1) return res.status(400).json({ error: 'Cannot remove the last module' })
+  const idx = overlay.modules.findIndex(m => m.id === req.params.moduleId)
+  if (idx === -1) return res.status(404).json({ error: 'Module not found' })
+  overlay.modules.splice(idx, 1)
+  saveState()
+  if (overlay.id === state.activeId) broadcast()
+  res.json({ modules: overlay.modules })
+})
+
+app.patch('/api/overlays/:id/modules/:moduleId', (req, res) => {
+  const overlay = getOverlay(req.params.id)
+  if (!overlay) return res.status(404).json({ error: 'Overlay not found' })
+  const mod = overlay.modules.find(m => m.id === req.params.moduleId)
+  if (!mod) return res.status(404).json({ error: 'Module not found' })
+  patchModule(mod, req.body ?? {})
+  saveState()
+  if (overlay.id === state.activeId) broadcast()
+  res.json(mod)
+})
+
+// ── State (returns modules for a given overlay) ───────────────
+app.get('/api/state', (req, res) => {
+  const overlay = (req.query.id ? getOverlay(req.query.id) : null) ?? getActive()
+  res.json({ modules: overlay.modules })
 })
 
 app.listen(PORT, () => {

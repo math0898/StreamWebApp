@@ -44,174 +44,152 @@
       </div>
     </div>
 
-    <!-- ── Counts ─────────────────────────────────────── -->
-    <section class="section">
-      <h2 class="section-title">Counts</h2>
-      <div class="two-col">
-        <div v-for="n in [1, 2]" :key="n" class="col">
-          <p class="col-title">{{ n === 1 ? label1 : label2 }}</p>
-          <p class="count">{{ n === 1 ? count1 : count2 }}</p>
-
-          <!-- increment / decrement by step -->
-          <div class="row">
-            <button @click="adjustCount(n, -1)">−</button>
-            <input
-              type="number"
-              class="step-input"
-              :value="n === 1 ? step1 : step2"
-              @change="setStepLocal(n, $event.target.value)"
-              title="Step size"
-            />
-            <button @click="adjustCount(n, +1)">+</button>
-          </div>
-
-          <!-- direct set -->
-          <div class="row">
-            <input
-              type="number"
-              class="set-input"
-              placeholder="Set value…"
-              :value="n === 1 ? setVal1 : setVal2"
-              @input="updateSetVal(n, $event.target.value)"
-              @keyup.enter="setCount(n)"
-            />
-            <button @click="setCount(n)">Set</button>
-            <button class="reset" @click="setField(`count${n}`, 0)">Reset</button>
-          </div>
-
-          <!-- goal (max) -->
-          <div class="row">
-            <label class="field-label">Goal</label>
-            <input
-              type="number"
-              min="1"
-              :value="n === 1 ? max1 : max2"
-              @change="setField(`max${n}`, $event.target.valueAsNumber)"
-            />
-            <button class="reset-sm" @click="setField(`max${n}`, 100)">Reset</button>
-          </div>
-        </div>
+    <!-- ── Module cards ───────────────────────────────── -->
+    <div v-for="mod in modules" :key="mod.id" class="module-card">
+      <div class="module-header">
+        <span class="module-title">{{ mod.label }}</span>
+        <button
+          v-if="modules.length > 1"
+          class="action-btn action-delete"
+          @click="removeModule(mod.id)"
+        >Remove</button>
       </div>
-    </section>
 
-    <!-- ── Appearance ──────────────────────────────────── -->
-    <section class="section">
-      <h2 class="section-title">Appearance</h2>
-      <div class="two-col">
-        <div v-for="n in [1, 2]" :key="n" class="col">
-          <p class="col-title">Bar {{ n }}</p>
+      <!-- Counts -->
+      <section class="section">
+        <h2 class="section-title">Counts</h2>
+        <p class="count">{{ mod.count }}</p>
 
-          <div class="row">
-            <label class="field-label">Label</label>
-            <input
-              type="text"
-              class="text-input"
-              :value="n === 1 ? label1 : label2"
-              @change="setField(`label${n}`, $event.target.value)"
-            />
-            <button class="reset-sm" @click="setField(`label${n}`, `Counter ${n}`)">Reset</button>
-          </div>
-
-          <div class="row">
-            <label class="field-label">Color</label>
-            <input
-              type="color"
-              class="color-input"
-              :value="n === 1 ? color1 : color2"
-              @input="setField(`color${n}`, $event.target.value)"
-            />
-            <button class="reset-sm" @click="setField(`color${n}`, n === 1 ? '#82b1ff' : '#a5d6a7')">Reset</button>
-          </div>
+        <div class="row">
+          <button @click="adjustCount(mod, -1)">−</button>
+          <input
+            type="number"
+            class="step-input"
+            :value="steps[mod.id] ?? 1"
+            @change="setStepLocal(mod.id, $event.target.value)"
+            title="Step size"
+          />
+          <button @click="adjustCount(mod, +1)">+</button>
         </div>
-      </div>
-    </section>
 
-    <!-- ── Layout ─────────────────────────────────────── -->
-    <section class="section">
-      <h2 class="section-title">Layout</h2>
-      <div class="two-col">
-        <div v-for="n in [1, 2]" :key="n" class="col">
-          <p class="col-title">Bar {{ n }}</p>
-
-          <p class="sub-title">Bar</p>
-          <div v-for="f in barFields" :key="'b' + f.key" class="row">
-            <label class="field-label">{{ f.label }}</label>
-            <input
-              type="number"
-              :step="f.step"
-              :value="(n === 1 ? bar1 : bar2)[f.key]"
-              @change="setNestedField(`bar${n}`, f.key, $event.target.valueAsNumber)"
-            />
-            <button class="reset-sm" @click="setNestedField(`bar${n}`, f.key, f.def)">Reset</button>
-          </div>
-
-          <p class="sub-title">Title</p>
-          <div v-for="f in titleFields" :key="'t' + f.key" class="row">
-            <label class="field-label">{{ f.label }}</label>
-            <input
-              type="number"
-              :step="f.step"
-              :value="(n === 1 ? title1 : title2)[f.key]"
-              @change="setNestedField(`title${n}`, f.key, $event.target.valueAsNumber)"
-            />
-            <button class="reset-sm" @click="setNestedField(`title${n}`, f.key, f.def)">Reset</button>
-          </div>
-
-          <p class="sub-title">Value</p>
-          <div v-for="f in valueFields" :key="'v' + f.key" class="row">
-            <label class="field-label">{{ f.label }}</label>
-            <input
-              type="number"
-              :step="f.step"
-              :value="(n === 1 ? value1 : value2)[f.key]"
-              @change="setNestedField(`value${n}`, f.key, $event.target.valueAsNumber)"
-            />
-            <button class="reset-sm" @click="setNestedField(`value${n}`, f.key, f.def)">Reset</button>
-          </div>
+        <div class="row">
+          <input
+            type="number"
+            class="set-input"
+            placeholder="Set value…"
+            :value="setVals[mod.id] ?? ''"
+            @input="updateSetVal(mod.id, $event.target.value)"
+            @keyup.enter="setCount(mod)"
+          />
+          <button @click="setCount(mod)">Set</button>
+          <button class="reset" @click="patchMod(mod.id, { count: 0 })">Reset</button>
         </div>
-      </div>
-    </section>
+
+        <div class="row">
+          <label class="field-label">Goal</label>
+          <input
+            type="number"
+            min="1"
+            :value="mod.max"
+            @change="patchMod(mod.id, { max: $event.target.valueAsNumber })"
+          />
+          <button class="reset-sm" @click="patchMod(mod.id, { max: 100 })">Reset</button>
+        </div>
+      </section>
+
+      <!-- Appearance -->
+      <section class="section">
+        <h2 class="section-title">Appearance</h2>
+
+        <div class="row">
+          <label class="field-label">Label</label>
+          <input
+            type="text"
+            class="text-input"
+            :value="mod.label"
+            @change="patchMod(mod.id, { label: $event.target.value })"
+          />
+          <button class="reset-sm" @click="patchMod(mod.id, { label: 'Counter' })">Reset</button>
+        </div>
+
+        <div class="row">
+          <label class="field-label">Color</label>
+          <input
+            type="color"
+            class="color-input"
+            :value="mod.color"
+            @input="patchMod(mod.id, { color: $event.target.value })"
+          />
+          <button class="reset-sm" @click="patchMod(mod.id, { color: '#82b1ff' })">Reset</button>
+        </div>
+      </section>
+
+      <!-- Layout -->
+      <section class="section">
+        <h2 class="section-title">Layout</h2>
+
+        <p class="sub-title">Bar</p>
+        <div v-for="f in barFields" :key="'b' + f.key" class="row">
+          <label class="field-label">{{ f.label }}</label>
+          <input
+            type="number"
+            :step="f.step"
+            :value="mod.bar[f.key]"
+            @change="patchMod(mod.id, { bar: { [f.key]: $event.target.valueAsNumber } })"
+          />
+          <button class="reset-sm" @click="patchMod(mod.id, { bar: { [f.key]: f.def } })">Reset</button>
+        </div>
+
+        <p class="sub-title">Title</p>
+        <div v-for="f in titleFields" :key="'t' + f.key" class="row">
+          <label class="field-label">{{ f.label }}</label>
+          <input
+            type="number"
+            :step="f.step"
+            :value="mod.title[f.key]"
+            @change="patchMod(mod.id, { title: { [f.key]: $event.target.valueAsNumber } })"
+          />
+          <button class="reset-sm" @click="patchMod(mod.id, { title: { [f.key]: f.def } })">Reset</button>
+        </div>
+
+        <p class="sub-title">Value</p>
+        <div v-for="f in valueFields" :key="'v' + f.key" class="row">
+          <label class="field-label">{{ f.label }}</label>
+          <input
+            type="number"
+            :step="f.step"
+            :value="mod.value[f.key]"
+            @change="patchMod(mod.id, { value: { [f.key]: $event.target.valueAsNumber } })"
+          />
+          <button class="reset-sm" @click="patchMod(mod.id, { value: { [f.key]: f.def } })">Reset</button>
+        </div>
+      </section>
+    </div>
+
+    <!-- ── Add module ──────────────────────────────────── -->
+    <div class="add-module-row">
+      <button class="add-module-btn" @click="addModule">+ Add Module</button>
+    </div>
 
     <p class="hint">Changes are sent to the server and forwarded to the Overlay page in real time.</p>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted, nextTick } from 'vue'
+import { ref, reactive, onMounted, nextTick } from 'vue'
 
 // ── Overlay management ────────────────────────────────────────
-const overlayList    = ref([])    // [{ id, name }]
-const activeId       = ref('')    // overlay shown on /overlay
-const editingId      = ref('')    // overlay being edited in dashboard
+const overlayList    = ref([])
+const activeId       = ref('')
+const editingId      = ref('')
 const renaming       = ref(false)
 const renameVal      = ref('')
 const renameInputRef = ref(null)
 
-// ── Server-persisted state (for the editing overlay) ──────────
-const count1 = ref(0)
-const count2 = ref(0)
-const max1   = ref(100)
-const max2   = ref(100)
-const label1 = ref('Counter 1')
-const label2 = ref('Counter 2')
-const color1 = ref('#82b1ff')
-const color2 = ref('#a5d6a7')
-const bar1   = ref({ x: 0, y: 0, scaleX: 1, scaleY: 1 })
-const bar2   = ref({ x: 0, y: 0, scaleX: 1, scaleY: 1 })
-const title1 = ref({ x: 0, y: 0, fontSize: 16 })
-const title2 = ref({ x: 0, y: 0, fontSize: 16 })
-const value1 = ref({ x: 0, y: 0, fontSize: 14 })
-const value2 = ref({ x: 0, y: 0, fontSize: 14 })
-
-// ── Local UI state (not persisted) ───────────────────────────
-const step1   = ref(1)
-const step2   = ref(1)
-const setVal1 = ref('')
-const setVal2 = ref('')
-
-// ── Lookup maps for generic helpers ──────────────────────────
-const stateRefs  = { count1, count2, max1, max2, label1, label2, color1, color2 }
-const nestedRefs = { bar1, bar2, title1, title2, value1, value2 }
+// ── Module state ──────────────────────────────────────────────
+const modules = ref([])
+const steps   = reactive({})   // moduleId → step number
+const setVals = reactive({})   // moduleId → string input
 
 // ── Field descriptors ─────────────────────────────────────────
 const barFields = [
@@ -231,23 +209,23 @@ const valueFields = [
   { key: 'fontSize', label: 'Font Size', step: 1, def: 14 },
 ]
 
-// ── State sync helpers ────────────────────────────────────────
-function applyState(data) {
-  if (data == null) return
-  for (const key of ['count1', 'count2', 'max1', 'max2']) {
-    if (typeof data[key] === 'number') stateRefs[key].value = data[key]
-  }
-  for (const key of ['label1', 'label2', 'color1', 'color2']) {
-    if (typeof data[key] === 'string') stateRefs[key].value = data[key]
-  }
-  for (const key of Object.keys(nestedRefs)) {
-    if (data[key]) nestedRefs[key].value = { ...nestedRefs[key].value, ...data[key] }
+// ── Module helpers ────────────────────────────────────────────
+function applyModules(newModules) {
+  modules.value = newModules
+  // Reset per-module local UI state
+  for (const key of Object.keys(steps))   delete steps[key]
+  for (const key of Object.keys(setVals)) delete setVals[key]
+  for (const mod of newModules) {
+    steps[mod.id]   = 1
+    setVals[mod.id] = ''
   }
 }
 
+// ── State fetch helpers ───────────────────────────────────────
 async function fetchOverlayState(id) {
-  const res = await fetch(`/api/state?id=${encodeURIComponent(id)}`)
-  applyState(await res.json())
+  const res  = await fetch(`/api/state?id=${encodeURIComponent(id)}`)
+  const data = await res.json()
+  applyModules(data.modules ?? [])
 }
 
 async function fetchOverlayList() {
@@ -347,70 +325,88 @@ async function confirmDelete() {
   }
 }
 
-// ── POST helper (always targets the editing overlay) ─────────
-async function post(patch) {
-  const url = `/api/state?id=${encodeURIComponent(editingId.value)}`
-  try {
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(patch),
-    })
-    applyState(await res.json())
-  } catch (err) {
-    console.warn('[dashboard] Failed to POST state:', err)
-    try {
-      applyState(await (await fetch(url)).json())
-    } catch (recoveryErr) {
-      console.warn('[dashboard] Failed to recover state:', recoveryErr)
+// ── Module actions ────────────────────────────────────────────
+async function patchMod(moduleId, patch) {
+  // Optimistic update
+  const mod = modules.value.find(m => m.id === moduleId)
+  if (mod) {
+    for (const [key, val] of Object.entries(patch)) {
+      if (val !== null && typeof val === 'object' && !Array.isArray(val)) {
+        mod[key] = { ...mod[key], ...val }
+      } else {
+        mod[key] = val
+      }
     }
+  }
+  try {
+    const res = await fetch(
+      `/api/overlays/${encodeURIComponent(editingId.value)}/modules/${encodeURIComponent(moduleId)}`,
+      {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(patch),
+      }
+    )
+    const updated = await res.json()
+    const idx = modules.value.findIndex(m => m.id === moduleId)
+    if (idx !== -1) modules.value[idx] = updated
+  } catch (err) {
+    console.warn('[dashboard] Failed to patch module:', err)
+    try { await fetchOverlayState(editingId.value) } catch {}
+  }
+}
+
+async function addModule() {
+  try {
+    const res = await fetch(
+      `/api/overlays/${encodeURIComponent(editingId.value)}/modules`,
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) }
+    )
+    const mod = await res.json()
+    modules.value.push(mod)
+    steps[mod.id]   = 1
+    setVals[mod.id] = ''
+  } catch (err) {
+    console.warn('[dashboard] Failed to add module:', err)
+  }
+}
+
+async function removeModule(moduleId) {
+  const mod = modules.value.find(m => m.id === moduleId)
+  if (!window.confirm(`Remove module "${mod?.label ?? moduleId}"? This cannot be undone.`)) return
+  try {
+    const res  = await fetch(
+      `/api/overlays/${encodeURIComponent(editingId.value)}/modules/${encodeURIComponent(moduleId)}`,
+      { method: 'DELETE' }
+    )
+    const data = await res.json()
+    applyModules(data.modules)
+  } catch (err) {
+    console.warn('[dashboard] Failed to remove module:', err)
   }
 }
 
 // ── Counter actions ───────────────────────────────────────────
-function adjustCount(n, direction) {
-  const step  = (n === 1 ? step1 : step2).value
-  const count = n === 1 ? count1 : count2
-  const val   = count.value + direction * step
-  count.value = val
-  post({ [`count${n}`]: val })
+function adjustCount(mod, direction) {
+  const step = steps[mod.id] ?? 1
+  patchMod(mod.id, { count: mod.count + direction * step })
 }
 
-function setCount(n) {
-  const svRef = n === 1 ? setVal1 : setVal2
-  const val   = Number(svRef.value)
+function setCount(mod) {
+  const val = Number(setVals[mod.id])
   if (!Number.isFinite(val)) return
-  const count = n === 1 ? count1 : count2
-  count.value = val
-  svRef.value = ''
-  post({ [`count${n}`]: val })
+  setVals[mod.id] = ''
+  patchMod(mod.id, { count: val })
 }
 
-function setStepLocal(n, raw) {
+function setStepLocal(modId, raw) {
   const val = Number(raw)
   if (!Number.isFinite(val) || val <= 0) return
-  if (n === 1) step1.value = val
-  else         step2.value = val
+  steps[modId] = val
 }
 
-function updateSetVal(n, val) {
-  if (n === 1) setVal1.value = val
-  else         setVal2.value = val
-}
-
-// ── Generic field setters ─────────────────────────────────────
-function setField(key, value) {
-  if ((key === 'max1' || key === 'max2') && (!Number.isFinite(value) || value < 1)) return
-  if (stateRefs[key] !== undefined) stateRefs[key].value = value
-  post({ [key]: value })
-}
-
-function setNestedField(objKey, field, value) {
-  if (!Number.isFinite(value)) return
-  if (field === 'fontSize' && value < 1) return
-  const obj = nestedRefs[objKey]
-  obj.value = { ...obj.value, [field]: value }
-  post({ [objKey]: { [field]: value } })
+function updateSetVal(modId, val) {
+  setVals[modId] = val
 }
 </script>
 
@@ -510,10 +506,56 @@ h1 {
   width: 12rem;
 }
 
+/* ── Module cards ────────────────────────────── */
+.module-card {
+  width: 100%;
+  max-width: 640px;
+  border: 1px solid #2a2a2a;
+  border-radius: 8px;
+  margin-bottom: 1rem;
+  padding: 0 1rem;
+}
+
+.module-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 0 0.5rem;
+  border-bottom: 1px solid #2a2a2a;
+}
+
+.module-title {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #bdbdbd;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+/* ── Add module ──────────────────────────────── */
+.add-module-row {
+  width: 100%;
+  max-width: 640px;
+  display: flex;
+  justify-content: center;
+  margin-bottom: 0.5rem;
+}
+
+.add-module-btn {
+  font-size: 0.85rem;
+  padding: 0.45rem 1.4rem;
+  background: #1e1e1e;
+  color: #66bb6a;
+  border: 1px solid #2e5c30;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.add-module-btn:hover { background: #1a2e1c; }
+
 /* ── Sections ────────────────────────────────── */
 .section {
   width: 100%;
-  max-width: 640px;
   border-top: 1px solid #2a2a2a;
   padding: 1.25rem 0;
 }
@@ -585,26 +627,6 @@ input[type='color'] {
   flex: 1;
   min-width: 0;
   text-align: left !important;
-}
-
-.two-col {
-  display: flex;
-  gap: 2rem;
-  flex-wrap: wrap;
-}
-
-.col {
-  flex: 1;
-  min-width: 220px;
-}
-
-.col-title {
-  font-size: 0.8rem;
-  font-weight: 600;
-  color: #757575;
-  margin: 0 0 0.6rem;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
 }
 
 .count {
