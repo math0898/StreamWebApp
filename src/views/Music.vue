@@ -59,7 +59,14 @@
             <p class="track-title">{{ track.title }}</p>
             <p class="muted small">{{ track.artist }}</p>
             <p class="muted small">{{ track.album }}</p>
-            <button class="action-btn play-btn" @click="playTrack(track.id)">Set Now Playing</button>
+            <div class="track-action-row">
+              <button
+                class="action-btn preview-btn"
+                :aria-label="previewingTrackId === track.id ? 'Pause preview' : 'Play preview'"
+                @click="previewTrack(track)"
+              >{{ previewingTrackId === track.id ? '⏸' : '▶' }}</button>
+              <button class="action-btn play-btn" @click="playTrack(track.id)">Set Now Playing</button>
+            </div>
             <div class="attr-editor">
               <label class="attr-row">
                 <span>Liked ({{ trackDraftValue(track.id, likedAttributeId).toFixed(2) }})</span>
@@ -232,6 +239,40 @@ const savingAttributes = ref(false)
 const savingTrackId = ref('')
 const formMessage = ref('')
 const newAttributeName = ref('')
+
+// ── Client-side track preview ──────────────────────────────────────────────
+// A single shared Audio element is reused across all track previews.
+// Only one track plays at a time; clicking another track's play button stops
+// the current one and starts the new one.
+let previewAudio = null
+const previewingTrackId = ref(null)
+
+function getOrCreateAudio() {
+  if (!previewAudio) previewAudio = new Audio()
+  return previewAudio
+}
+
+function previewTrack(track) {
+  const audio = getOrCreateAudio()
+  if (previewingTrackId.value === track.id && !audio.paused) {
+    // Clicking the same track while it's playing → pause it.
+    audio.pause()
+    previewingTrackId.value = null
+    return
+  }
+  if (previewingTrackId.value !== track.id) {
+    audio.pause()
+    audio.src = track.audioPath
+    audio.currentTime = 0
+  }
+  previewingTrackId.value = track.id
+  audio.play().catch(() => {
+    // Browser may block autoplay; the user will need to click again.
+    previewingTrackId.value = null
+  })
+  audio.onended = () => { previewingTrackId.value = null }
+  audio.onerror = () => { previewingTrackId.value = null }
+}
 
 const form = reactive({
   artist: '',
@@ -728,6 +769,19 @@ h1 {
 
 .play-btn {
   margin-top: 0.35rem;
+}
+
+.track-action-row {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-top: 0.35rem;
+}
+
+.preview-btn {
+  min-width: 2.2rem;
+  text-align: center;
+  flex-shrink: 0;
 }
 
 .playback-controls {

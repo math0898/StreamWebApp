@@ -16,6 +16,7 @@ import {
   newModule as createModule,
   patchModule as patchOverlayModule,
 } from './module-models.js'
+import { selectNextTrack } from './dj-selector.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const DATA_FILE = join(__dirname, 'data.json')
@@ -29,6 +30,7 @@ const LIKED_POSITIVE_DECAY_MS = 30 * 24 * 60 * 60 * 1000
 const LIKED_NEGATIVE_DECAY_MS = 90 * 24 * 60 * 60 * 1000
 const DEFAULT_STYLE_OPTIONS = ['Acoustic', 'Piano', 'EDM', 'Lofi', 'Christmas']
 const MAX_DEBUG_MESSAGES = 120
+const MAX_RECENTLY_PLAYED = 200
 const IMPORT_RATE_LIMIT_WINDOW_MS = 60_000
 const IMPORT_RATE_LIMIT_MAX_REQUESTS = 8
 const DOT_CHAR_CODE = '.'.charCodeAt(0)
@@ -385,6 +387,18 @@ function readMusicLibraryFromDisk() {
 }
 
 function setNowPlaying(track) {
+  // Record the currently-playing track in the recently-played history before
+  // switching, so the DJ mood window has an up-to-date sample.
+  const outgoingId = state.music.song?.audioPath
+    ? (state.music.library.find(t => t.audioPath === state.music.song.audioPath)?.id ?? null)
+    : null
+  if (outgoingId) {
+    if (!Array.isArray(state.music.recentlyPlayed)) state.music.recentlyPlayed = []
+    state.music.recentlyPlayed.push(outgoingId)
+    if (state.music.recentlyPlayed.length > MAX_RECENTLY_PLAYED) {
+      state.music.recentlyPlayed.splice(0, state.music.recentlyPlayed.length - MAX_RECENTLY_PLAYED)
+    }
+  }
   state.music.song = {
     title: track.title,
     artist: track.artist,
@@ -401,9 +415,68 @@ function setNowPlaying(track) {
   state.music.rulePauseActive = false
 }
 
+/**
+ * Return the next track to play for the given overlay.
+ *
+ * If the overlay has a DJ module, the DJ scoring algorithm (see dj-selector.js)
+ * is used to choose the best candidate.  Otherwise, tracks advance sequentially.
+ *
+ * @param {string} [overlayId]
+ * @returns {Track | null}
+ */
 function nextTrackFromLibrary(overlayId = state.activeId) {
   const list = getAllowedTracksForOverlay(overlayId)
   if (!Array.isArray(list) || list.length === 0) return null
+
+  // Look for a DJ module in the target overlay.
+  const overlay = getOverlay(overlayId) ?? getActive()
+  const djModule = overlay?.modules?.find(m => m.type === 'dj') ?? null
+
+  if (djModule) {
+    // ── DJ-guided selection ────────────────────────────────────────────────
+    const currentTrackId = state.music.library.find(
+      t => t.audioPath === state.music?.song?.audioPath,
+    )?.id ?? null
+
+    // IDs of all custom (non-liked) attributes, used for vector computations.
+    const customAttrIds = (Array.isArray(state.music.attributeDefinitions)
+      ? state.music.attributeDefinitions
+      : []
+    ).filter(d => d.type === 'custom').map(d => d.id)
+
+    const djConfig = {
+      likedBonus:       djModule.likedBonus   ?? 1,
+      stylePenalty:     djModule.stylePenalty  ?? 0.1,
+      moodWindow:       djModule.moodWindow    ?? 5,
+      minRepeats:       djModule.minRepeats    ?? 0,
+      targetStyles:     djModule.targetStyles  ?? [],
+      targetAttributes: djModule.targetAttributes ?? {},
+    }
+
+    const recentlyPlayed = Array.isArray(state.music.recentlyPlayed)
+      ? state.music.recentlyPlayed
+      : []
+
+    const selected = selectNextTrack(
+      list,
+      currentTrackId,
+      recentlyPlayed,
+      djConfig,
+      customAttrIds,
+      /* getAttrValues */ (id) => getTrackAttributeValues(id),
+      /* getStyles     */ (id) => normalizeStyleList(
+        state.music.trackMetadata?.[id]?.styles ?? [],
+      ),
+    )
+
+    if (selected) {
+      logMusicDebug(`DJ selected: "${selected.title}" by ${selected.artist}`)
+      return selected
+    }
+    // Fall through to sequential if DJ returned null (should not happen).
+  }
+
+  // ── Sequential fallback ────────────────────────────────────────────────
   const currentPath = state.music?.song?.audioPath
   const idx = list.findIndex(track => track.audioPath === currentPath)
   if (idx < 0) return list[0]
@@ -570,6 +643,7 @@ function createInitialMusicState() {
     trackMetadata: Object.create(null),
     styleOptions: [...DEFAULT_STYLE_OPTIONS],
     overlayAlbumRules: Object.create(null),
+    recentlyPlayed: [],
     rulePauseActive: false,
     playback: {
       status: 'playing',
@@ -630,6 +704,9 @@ function mergeMusicState(savedMusic) {
     trackMetadata: normalizeTrackMetadata(savedMusic?.trackMetadata),
     styleOptions,
     overlayAlbumRules,
+    recentlyPlayed: Array.isArray(savedMusic?.recentlyPlayed)
+      ? savedMusic.recentlyPlayed.filter(id => typeof id === 'string' && id.trim()).slice(-MAX_RECENTLY_PLAYED)
+      : [],
     rulePauseActive: savedMusic?.rulePauseActive === true,
     playback: {
       status: playbackStatus,
