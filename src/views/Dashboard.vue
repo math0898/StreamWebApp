@@ -119,6 +119,10 @@
 
           <template v-else-if="mod.type === 'image'">
             <div class="edit-row">
+              <label class="edit-label">Name</label>
+              <input type="text" class="wide-input" placeholder="Image Module" :value="mod.name" @change="patchMod(mod.id, { name: $event.target.value })" />
+            </div>
+            <div class="edit-row">
               <label class="edit-label">Image Path</label>
               <input type="text" class="wide-input" :value="mod.src" @change="patchMod(mod.id, { src: $event.target.value })" />
             </div>
@@ -138,6 +142,10 @@
           </template>
 
           <template v-else-if="mod.type === 'text'">
+            <div class="edit-row">
+              <label class="edit-label">Name</label>
+              <input type="text" class="wide-input" placeholder="Text Module" :value="mod.name" @change="patchMod(mod.id, { name: $event.target.value })" />
+            </div>
             <div class="edit-row">
               <label class="edit-label">Text</label>
               <input type="text" class="wide-input" :value="mod.text" @change="patchMod(mod.id, { text: $event.target.value })" />
@@ -218,8 +226,8 @@ const textTransformFields = [
 ]
 
 function moduleTitle(mod) {
-  if (mod.type === 'image') return 'Image Module'
-  if (mod.type === 'text') return 'Text Module'
+  if (mod.type === 'image') return mod.name?.trim() || 'Image Module'
+  if (mod.type === 'text') return mod.name?.trim() || 'Text Module'
   return mod.label || 'ProgressBar Module'
 }
 

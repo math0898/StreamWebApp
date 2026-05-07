@@ -64,6 +64,7 @@ function patchProgressBar(target, patch) {
 }
 
 function patchImage(target, patch) {
+  if (typeof patch.name === 'string') target.name = patch.name
   if (typeof patch.src === 'string') target.src = patch.src
   if (typeof patch.alt === 'string') target.alt = patch.alt
   if (typeof patch.opacity === 'number' && patch.opacity >= 0 && patch.opacity <= 1) target.opacity = patch.opacity
@@ -78,7 +79,8 @@ function patchImage(target, patch) {
 }
 
 function patchText(target, patch) {
-  if (typeof patch.text  === 'string') target.text = patch.text
+  if (typeof patch.name === 'string') target.name = patch.name
+  if (typeof patch.text === 'string') target.text = patch.text
   if (typeof patch.color === 'string') target.color = patch.color
 
   if (patch.transform && typeof patch.transform === 'object') {
@@ -100,6 +102,7 @@ function mergeModule(saved) {
       id:        saved?.id ?? newId(),
       type:      'image',
       hidden:    saved?.hidden === true,
+      name:      typeof saved?.name === 'string' ? saved.name : '',
       src:       typeof saved?.src === 'string' ? saved.src : d.src,
       alt:       typeof saved?.alt === 'string' ? saved.alt : d.alt,
       opacity:   typeof saved?.opacity === 'number' ? saved.opacity : d.opacity,
@@ -115,6 +118,7 @@ function mergeModule(saved) {
       id:        saved?.id ?? newId(),
       type:      'text',
       hidden:    saved?.hidden === true,
+      name:      typeof saved?.name === 'string' ? saved.name : '',
       text:      typeof saved?.text === 'string' ? saved.text : d.text,
       color:     typeof saved?.color === 'string' ? saved.color : d.color,
       transform: { ...DEFAULT_TEXT_TRANSFORM, ...(saved?.transform ?? {}) },
@@ -177,6 +181,8 @@ function newModule(type = 'progressBar') {
     return {
       id:        newId(),
       type:      'image',
+      hidden:    false,
+      name:      '',
       src:       d.src,
       alt:       d.alt,
       opacity:   d.opacity,
@@ -189,6 +195,8 @@ function newModule(type = 'progressBar') {
     return {
       id:        newId(),
       type:      'text',
+      hidden:    false,
+      name:      '',
       text:      d.text,
       color:     d.color,
       transform: { ...DEFAULT_TEXT_TRANSFORM, ...d.transform },
@@ -199,6 +207,7 @@ function newModule(type = 'progressBar') {
   return {
     id:    newId(),
     type:  'progressBar',
+    hidden: false,
     label: d.label,
     count: 0,
     max:   d.max,
@@ -442,7 +451,10 @@ app.patch('/api/overlays/:id/modules/:moduleId', (req, res) => {
   if (!mod) return res.status(404).json({ error: 'Module not found' })
   patchModule(mod, req.body ?? {})
   saveState()
-  if (overlay.id === state.activeId) broadcast()
+  // broadcast when editing the active overlay, or whenever `hidden` changes
+  // so that visibility toggles are always reflected on /overlay immediately
+  const shouldBroadcast = overlay.id === state.activeId || typeof req.body?.hidden === 'boolean'
+  if (shouldBroadcast) broadcast()
   res.json(mod)
 })
 
