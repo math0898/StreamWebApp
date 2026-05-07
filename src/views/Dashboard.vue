@@ -57,8 +57,8 @@
       </div>
 
       <div class="music-controls">
-        <button class="action-btn" :disabled="music?.status === 'paused'" @click="pauseMusic">Pause</button>
-        <button class="action-btn" :disabled="music?.status !== 'paused'" @click="resumeMusic">Resume</button>
+        <button class="action-btn" :disabled="!canPause" @click="pauseMusic">Pause</button>
+        <button class="action-btn" :disabled="!canResume" @click="resumeMusic">Resume</button>
         <button class="action-btn action-activate" @click="skipMusic">Skip Song</button>
       </div>
 
@@ -205,7 +205,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, nextTick } from 'vue'
+import { ref, reactive, onMounted, nextTick, computed } from 'vue'
 
 const overlayList    = ref([])
 const activeId       = ref('')
@@ -219,6 +219,8 @@ const steps   = reactive({})
 const setVals = reactive({})
 const editOpen = reactive({})
 const music = ref(null)
+const canPause = computed(() => music.value?.status !== 'paused')
+const canResume = computed(() => music.value?.status === 'paused')
 
 const newModuleType = ref('progressBar')
 

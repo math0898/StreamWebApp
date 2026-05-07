@@ -122,7 +122,7 @@ function textModuleStyle(mod) {
 
 function computeElapsedSec(snapshot, nowMs = Date.now()) {
   if (!snapshot) return 0
-  const pausedBase = snapshot.pauseStartedAt ?? nowMs
+  const pausedBase = typeof snapshot.pauseStartedAt === 'number' ? snapshot.pauseStartedAt : nowMs
   const elapsedMs = snapshot.status === 'paused'
     ? pausedBase - snapshot.startedAt - snapshot.pausedMsTotal
     : nowMs - snapshot.startedAt - snapshot.pausedMsTotal
@@ -170,9 +170,8 @@ function refreshMusicProgress() {
 
 const shouldShowNowPlaying = computed(() => {
   if (!music.value?.song?.durationSec) return false
-  const audio = audioRef.value
-  const currentTime = Number.isFinite(audio?.currentTime) ? audio.currentTime : computeElapsedSec(music.value)
   const duration = music.value.song.durationSec
+  const currentTime = (musicProgressPct.value / 100) * duration
   return currentTime <= INTRO_POPUP_WINDOW_SEC || (duration - currentTime) <= OUTRO_POPUP_WINDOW_SEC
 })
 
