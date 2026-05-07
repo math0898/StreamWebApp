@@ -46,14 +46,22 @@
     <div class="music-panel">
       <div class="music-header-row">
         <h2>Background Music</h2>
-        <span class="music-status" :class="music?.status === 'paused' ? 'music-paused' : 'music-playing'">
-          {{ music?.status === 'paused' ? 'Paused' : 'Playing' }}
-        </span>
+        <div class="music-header-actions">
+          <span class="music-status" :class="music?.status === 'paused' ? 'music-paused' : 'music-playing'">
+            {{ music?.status === 'paused' ? 'Paused' : 'Playing' }}
+          </span>
+          <button
+            class="action-btn"
+            :class="{ 'action-edit-active': musicEditOpen }"
+            @click="musicEditOpen = !musicEditOpen"
+          >{{ musicEditOpen ? 'Done' : 'Edit' }}</button>
+        </div>
       </div>
 
       <div class="music-now-playing">
         <p class="music-line"><strong>Now Playing:</strong> {{ music?.song?.title ?? 'Unknown Song' }}</p>
         <p class="music-line"><strong>Artist:</strong> {{ music?.song?.artist ?? 'Unknown Artist' }}</p>
+        <p class="music-line"><strong>Album:</strong> {{ music?.song?.album ?? 'Unknown Album' }}</p>
       </div>
 
       <div class="music-controls">
@@ -67,6 +75,82 @@
         <code>public/Music/Album Name - Artist/</code>
         (use <code>cover.jpg</code> plus <code>.mp3/.ogg/.wav</code> files) so the app can load them as <code>/Music/...</code> assets.
       </p>
+
+      <div v-if="musicEditOpen" class="edit-panel music-edit-panel">
+        <div class="edit-row">
+          <label class="edit-label">Popup X Offset</label>
+          <input
+            type="number"
+            :value="popupSettings.x"
+            @change="patchPopupSettings({ x: $event.target.valueAsNumber })"
+          />
+        </div>
+        <div class="edit-row">
+          <label class="edit-label">Popup Y Offset</label>
+          <input
+            type="number"
+            :value="popupSettings.y"
+            @change="patchPopupSettings({ y: $event.target.valueAsNumber })"
+          />
+        </div>
+        <div class="edit-row checkbox-row">
+          <label class="edit-label">Default Play Music</label>
+          <input
+            type="checkbox"
+            :checked="popupSettings.defaultPlayMusic"
+            @change="patchPopupSettings({ defaultPlayMusic: $event.target.checked })"
+          />
+        </div>
+        <div class="edit-row checkbox-row">
+          <label class="edit-label">Hide Popup Visual</label>
+          <input
+            type="checkbox"
+            :checked="popupSettings.hiddenVisual"
+            @change="patchPopupSettings({ hiddenVisual: $event.target.checked })"
+          />
+        </div>
+        <p class="edit-sub">Popup Animation</p>
+        <div class="edit-row">
+          <label class="edit-label">Song Start Show (sec)</label>
+          <input
+            type="number"
+            min="0"
+            step="0.1"
+            :value="popupSettings.animation.songStartShowSec"
+            @change="patchPopupSettings({ animation: { songStartShowSec: $event.target.valueAsNumber } })"
+          />
+        </div>
+        <div class="edit-row">
+          <label class="edit-label">Song End Show (sec)</label>
+          <input
+            type="number"
+            min="0"
+            step="0.1"
+            :value="popupSettings.animation.songEndShowSec"
+            @change="patchPopupSettings({ animation: { songEndShowSec: $event.target.valueAsNumber } })"
+          />
+        </div>
+        <div class="edit-row">
+          <label class="edit-label">Periodic Interval (sec)</label>
+          <input
+            type="number"
+            min="0"
+            step="1"
+            :value="popupSettings.animation.periodicIntervalSec"
+            @change="patchPopupSettings({ animation: { periodicIntervalSec: $event.target.valueAsNumber } })"
+          />
+        </div>
+        <div class="edit-row">
+          <label class="edit-label">Periodic Show (sec)</label>
+          <input
+            type="number"
+            min="0"
+            step="0.1"
+            :value="popupSettings.animation.periodicShowSec"
+            @change="patchPopupSettings({ animation: { periodicShowSec: $event.target.valueAsNumber } })"
+          />
+        </div>
+      </div>
     </div>
 
     <div class="module-grid">
@@ -219,8 +303,21 @@ const steps   = reactive({})
 const setVals = reactive({})
 const editOpen = reactive({})
 const music = ref(null)
+const musicEditOpen = ref(false)
 const canPause = computed(() => !!music.value && music.value.status !== 'paused')
 const canResume = computed(() => !!music.value && music.value.status === 'paused')
+const popupSettings = reactive({
+  x: 0,
+  y: 0,
+  hiddenVisual: false,
+  defaultPlayMusic: true,
+  animation: {
+    songStartShowSec: 6,
+    songEndShowSec: 3,
+    periodicIntervalSec: 45,
+    periodicShowSec: 4,
+  },
+})
 
 const newModuleType = ref('progressBar')
 
@@ -283,10 +380,22 @@ function applyModules(newModules) {
   }
 }
 
+function applyPopupSettings(nextSettings) {
+  popupSettings.x = nextSettings?.x ?? 0
+  popupSettings.y = nextSettings?.y ?? 0
+  popupSettings.hiddenVisual = !!nextSettings?.hiddenVisual
+  popupSettings.defaultPlayMusic = typeof nextSettings?.defaultPlayMusic === 'boolean' ? nextSettings.defaultPlayMusic : true
+  popupSettings.animation.songStartShowSec = nextSettings?.animation?.songStartShowSec ?? 6
+  popupSettings.animation.songEndShowSec = nextSettings?.animation?.songEndShowSec ?? 3
+  popupSettings.animation.periodicIntervalSec = nextSettings?.animation?.periodicIntervalSec ?? 45
+  popupSettings.animation.periodicShowSec = nextSettings?.animation?.periodicShowSec ?? 4
+}
+
 async function fetchOverlayState(id) {
   const res  = await fetch(`/api/state?id=${encodeURIComponent(id)}`)
   const data = await res.json()
   applyModules(data.modules ?? [])
+  applyPopupSettings(data.nowPlayingPopup ?? {})
 }
 
 async function fetchOverlayList() {
@@ -368,7 +477,10 @@ async function submitRename() {
     })
     const data = await res.json()
     const ov = overlayList.value.find(o => o.id === editingId.value)
-    if (ov) ov.name = data.name
+    if (ov) {
+      ov.name = data.name
+      ov.nowPlayingPopup = data.nowPlayingPopup
+    }
     renaming.value = false
   } catch (err) {
     console.warn('[dashboard] Failed to rename overlay:', err)
@@ -492,6 +604,43 @@ function setStepLocal(modId, raw) {
 function updateSetVal(modId, val) {
   setVals[modId] = val
 }
+
+async function patchPopupSettings(patch) {
+  if (typeof patch.x === 'number' && Number.isFinite(patch.x)) popupSettings.x = patch.x
+  if (typeof patch.y === 'number' && Number.isFinite(patch.y)) popupSettings.y = patch.y
+  if (typeof patch.hiddenVisual === 'boolean') popupSettings.hiddenVisual = patch.hiddenVisual
+  if (typeof patch.defaultPlayMusic === 'boolean') popupSettings.defaultPlayMusic = patch.defaultPlayMusic
+  if (patch.animation && typeof patch.animation === 'object') {
+    if (typeof patch.animation.songStartShowSec === 'number' && Number.isFinite(patch.animation.songStartShowSec)) {
+      popupSettings.animation.songStartShowSec = patch.animation.songStartShowSec
+    }
+    if (typeof patch.animation.songEndShowSec === 'number' && Number.isFinite(patch.animation.songEndShowSec)) {
+      popupSettings.animation.songEndShowSec = patch.animation.songEndShowSec
+    }
+    if (typeof patch.animation.periodicIntervalSec === 'number' && Number.isFinite(patch.animation.periodicIntervalSec)) {
+      popupSettings.animation.periodicIntervalSec = patch.animation.periodicIntervalSec
+    }
+    if (typeof patch.animation.periodicShowSec === 'number' && Number.isFinite(patch.animation.periodicShowSec)) {
+      popupSettings.animation.periodicShowSec = patch.animation.periodicShowSec
+    }
+  }
+
+  try {
+    const res = await fetch(`/api/overlays/${encodeURIComponent(editingId.value)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ nowPlayingPopup: patch }),
+    })
+    const data = await res.json()
+    applyPopupSettings(data.nowPlayingPopup ?? {})
+    const ov = overlayList.value.find(o => o.id === editingId.value)
+    if (ov) ov.nowPlayingPopup = data.nowPlayingPopup
+    await fetchMusicState()
+  } catch (err) {
+    console.warn('[dashboard] Failed to patch popup settings:', err)
+    try { await fetchOverlayState(editingId.value) } catch {}
+  }
+}
 </script>
 
 <style scoped>
@@ -603,6 +752,12 @@ h1 {
   margin-bottom: 0.5rem;
 }
 
+.music-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
 .music-header-row h2 {
   margin: 0;
   font-size: 1rem;
@@ -658,6 +813,14 @@ h1 {
 
 .music-help code {
   color: #82b1ff;
+}
+
+.music-edit-panel {
+  margin-top: 0.75rem;
+}
+
+.checkbox-row {
+  grid-template-columns: 1fr auto;
 }
 
 .rename-input {

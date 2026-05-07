@@ -22,7 +22,7 @@ const DATA_FILE = join(__dirname, 'data.json')
 const PUBLIC_DIR = join(__dirname, '..', 'public')
 const MUSIC_DIR = join(PUBLIC_DIR, 'Music')
 const DEFAULT_MUSIC_LIBRARY_PATH = '/Music'
-const DEFAULT_SONG_DURATION_SEC = 180
+const DEFAULT_SONG_DURATION_SEC = 0
 const MAX_DEBUG_MESSAGES = 120
 const IMPORT_RATE_LIMIT_WINDOW_MS = 60_000
 const IMPORT_RATE_LIMIT_MAX_REQUESTS = 8
@@ -35,6 +35,18 @@ const DEFAULT_SONG = {
   coverPath: `${DEFAULT_MUSIC_LIBRARY_PATH}/Default Album - Unknown Artist/cover.jpg`,
   audioPath: `${DEFAULT_MUSIC_LIBRARY_PATH}/Default Album - Unknown Artist/Default Song.mp3`,
   durationSec: DEFAULT_SONG_DURATION_SEC,
+}
+const DEFAULT_NOW_PLAYING_POPUP = {
+  x: 0,
+  y: 0,
+  hiddenVisual: false,
+  defaultPlayMusic: true,
+  animation: {
+    songStartShowSec: 6,
+    songEndShowSec: 3,
+    periodicIntervalSec: 45,
+    periodicShowSec: 4,
+  },
 }
 const musicDebugMessages = []
 // Limit import bursts to reduce abuse of repeated file-write operations.
@@ -102,6 +114,54 @@ function patchText(target, patch) {
   }
 }
 
+function normalizeNowPlayingPopup(savedPopup) {
+  const animation = savedPopup?.animation ?? {}
+  return {
+    x: typeof savedPopup?.x === 'number' ? savedPopup.x : DEFAULT_NOW_PLAYING_POPUP.x,
+    y: typeof savedPopup?.y === 'number' ? savedPopup.y : DEFAULT_NOW_PLAYING_POPUP.y,
+    hiddenVisual: typeof savedPopup?.hiddenVisual === 'boolean' ? savedPopup.hiddenVisual : DEFAULT_NOW_PLAYING_POPUP.hiddenVisual,
+    defaultPlayMusic: typeof savedPopup?.defaultPlayMusic === 'boolean'
+      ? savedPopup.defaultPlayMusic
+      : DEFAULT_NOW_PLAYING_POPUP.defaultPlayMusic,
+    animation: {
+      songStartShowSec: typeof animation.songStartShowSec === 'number' && animation.songStartShowSec >= 0
+        ? animation.songStartShowSec
+        : DEFAULT_NOW_PLAYING_POPUP.animation.songStartShowSec,
+      songEndShowSec: typeof animation.songEndShowSec === 'number' && animation.songEndShowSec >= 0
+        ? animation.songEndShowSec
+        : DEFAULT_NOW_PLAYING_POPUP.animation.songEndShowSec,
+      periodicIntervalSec: typeof animation.periodicIntervalSec === 'number' && animation.periodicIntervalSec >= 0
+        ? animation.periodicIntervalSec
+        : DEFAULT_NOW_PLAYING_POPUP.animation.periodicIntervalSec,
+      periodicShowSec: typeof animation.periodicShowSec === 'number' && animation.periodicShowSec >= 0
+        ? animation.periodicShowSec
+        : DEFAULT_NOW_PLAYING_POPUP.animation.periodicShowSec,
+    },
+  }
+}
+
+function patchNowPlayingPopup(target, patch) {
+  if (!patch || typeof patch !== 'object') return
+  if (typeof patch.x === 'number') target.x = patch.x
+  if (typeof patch.y === 'number') target.y = patch.y
+  if (typeof patch.hiddenVisual === 'boolean') target.hiddenVisual = patch.hiddenVisual
+  if (typeof patch.defaultPlayMusic === 'boolean') target.defaultPlayMusic = patch.defaultPlayMusic
+  if (patch.animation && typeof patch.animation === 'object') {
+    if (typeof patch.animation.songStartShowSec === 'number' && patch.animation.songStartShowSec >= 0) {
+      target.animation.songStartShowSec = patch.animation.songStartShowSec
+    }
+    if (typeof patch.animation.songEndShowSec === 'number' && patch.animation.songEndShowSec >= 0) {
+      target.animation.songEndShowSec = patch.animation.songEndShowSec
+    }
+    if (typeof patch.animation.periodicIntervalSec === 'number' && patch.animation.periodicIntervalSec >= 0) {
+      target.animation.periodicIntervalSec = patch.animation.periodicIntervalSec
+    }
+    if (typeof patch.animation.periodicShowSec === 'number' && patch.animation.periodicShowSec >= 0) {
+      target.animation.periodicShowSec = patch.animation.periodicShowSec
+    }
+  }
+}
+
 function mergeModuleDefaults(saved) {
   const p = saved?.progressBar ?? {}
   const i = saved?.image ?? {}
@@ -136,6 +196,7 @@ function migrateOverlay(saved) {
   return {
     id:      overlayId,
     name:    saved.name ?? 'Default',
+    nowPlayingPopup: normalizeNowPlayingPopup(saved.nowPlayingPopup),
     modules: [
       mergeOverlayModule({
         id:    `${overlayId}-m1`,
@@ -174,7 +235,12 @@ function loadState() {
     if (Array.isArray(saved.overlays) && saved.overlays.length > 0) {
       overlays = saved.overlays.map(o =>
         Array.isArray(o.modules)
-          ? { id: o.id ?? newId(), name: o.name ?? 'Default', modules: o.modules.map(m => mergeOverlayModule(m, newId)) }
+          ? {
+            id: o.id ?? newId(),
+            name: o.name ?? 'Default',
+            nowPlayingPopup: normalizeNowPlayingPopup(o.nowPlayingPopup),
+            modules: o.modules.map(m => mergeOverlayModule(m, newId)),
+          }
           : migrateOverlay(o)
       )
       activeId = overlays.find(o => o.id === saved.activeId) ? saved.activeId : overlays[0].id
@@ -192,6 +258,7 @@ function loadState() {
       overlays: [{
         id:   'default',
         name: 'Default',
+        nowPlayingPopup: normalizeNowPlayingPopup(null),
         modules: [
           mergeOverlayModule({ id: 'default-m1', type: 'progressBar', label: 'Counter 1', color: '#82b1ff' }, newId),
           mergeOverlayModule({ id: 'default-m2', type: 'progressBar', label: 'Counter 2', color: '#a5d6a7' }, newId),
@@ -379,7 +446,7 @@ function mergeMusicState(savedMusic) {
       album: typeof track.album === 'string' && track.album.trim() ? track.album : DEFAULT_SONG.album,
       coverPath: typeof track.coverPath === 'string' && track.coverPath.trim() ? track.coverPath : DEFAULT_SONG.coverPath,
       audioPath: typeof track.audioPath === 'string' && track.audioPath.trim() ? track.audioPath : DEFAULT_SONG.audioPath,
-      durationSec: typeof track.durationSec === 'number' && track.durationSec > 0 ? track.durationSec : DEFAULT_SONG_DURATION_SEC,
+      durationSec: typeof track.durationSec === 'number' && track.durationSec >= 0 ? track.durationSec : DEFAULT_SONG_DURATION_SEC,
     }))
   const mergedSong = {
     title: typeof savedMusic?.song?.title === 'string' && savedMusic.song.title.trim() ? savedMusic.song.title : DEFAULT_SONG.title,
@@ -387,7 +454,7 @@ function mergeMusicState(savedMusic) {
     album: typeof savedMusic?.song?.album === 'string' && savedMusic.song.album.trim() ? savedMusic.song.album : DEFAULT_SONG.album,
     coverPath: typeof savedMusic?.song?.coverPath === 'string' && savedMusic.song.coverPath.trim() ? savedMusic.song.coverPath : DEFAULT_SONG.coverPath,
     audioPath: typeof savedMusic?.song?.audioPath === 'string' && savedMusic.song.audioPath.trim() ? savedMusic.song.audioPath : DEFAULT_SONG.audioPath,
-    durationSec: typeof savedMusic?.song?.durationSec === 'number' && savedMusic.song.durationSec > 0 ? savedMusic.song.durationSec : DEFAULT_SONG.durationSec,
+    durationSec: typeof savedMusic?.song?.durationSec === 'number' && savedMusic.song.durationSec >= 0 ? savedMusic.song.durationSec : DEFAULT_SONG.durationSec,
   }
   const status = savedMusic?.playback?.status === 'paused' ? 'paused' : 'playing'
   let pauseStartedAt = null
@@ -427,6 +494,13 @@ function getMusicSnapshot() {
     pausedMsTotal: state.music.playback.pausedMsTotal,
     serverTime: Date.now(),
   }
+}
+
+function applyActiveOverlayPlaybackDefault() {
+  const active = getActive()
+  if (!active?.nowPlayingPopup) return
+  if (active.nowPlayingPopup.defaultPlayMusic) resumeMusic()
+  else pauseMusic()
 }
 
 function pauseMusic() {
@@ -476,6 +550,7 @@ function buildPayload() {
     activeId: state.activeId,
     overlays: state.overlays.map(o => ({ id: o.id, name: o.name })),
     modules:  active.modules,
+    nowPlayingPopup: active.nowPlayingPopup,
     music: getMusicSnapshot(),
   })
 }
@@ -524,7 +599,7 @@ app.post('/api/defaults', (req, res) => {
 app.get('/api/overlays', (req, res) => {
   res.json({
     activeId: state.activeId,
-    overlays: state.overlays.map(o => ({ id: o.id, name: o.name })),
+    overlays: state.overlays.map(o => ({ id: o.id, name: o.name, nowPlayingPopup: o.nowPlayingPopup })),
   })
 })
 
@@ -532,11 +607,16 @@ app.post('/api/overlays', (req, res) => {
   const name = (typeof req.body?.name === 'string' && req.body.name.trim())
     ? req.body.name.trim()
     : `Overlay ${state.overlays.length + 1}`
-  const overlay = { id: newId(), name, modules: [createModule('progressBar', state.moduleDefaults, newId)] }
+  const overlay = {
+    id: newId(),
+    name,
+    nowPlayingPopup: normalizeNowPlayingPopup(null),
+    modules: [createModule('progressBar', state.moduleDefaults, newId)],
+  }
   state.overlays.push(overlay)
   saveState()
   broadcast()
-  res.status(201).json({ id: overlay.id, name: overlay.name })
+  res.status(201).json({ id: overlay.id, name: overlay.name, nowPlayingPopup: overlay.nowPlayingPopup })
 })
 
 app.delete('/api/overlays/:id', (req, res) => {
@@ -550,7 +630,7 @@ app.delete('/api/overlays/:id', (req, res) => {
   broadcast()
   res.json({
     activeId: state.activeId,
-    overlays: state.overlays.map(o => ({ id: o.id, name: o.name })),
+    overlays: state.overlays.map(o => ({ id: o.id, name: o.name, nowPlayingPopup: o.nowPlayingPopup })),
   })
 })
 
@@ -558,14 +638,20 @@ app.patch('/api/overlays/:id', (req, res) => {
   const overlay = getOverlay(req.params.id)
   if (!overlay) return res.status(404).json({ error: 'Overlay not found' })
   if (typeof req.body?.name === 'string' && req.body.name.trim()) overlay.name = req.body.name.trim()
+  if (!overlay.nowPlayingPopup) overlay.nowPlayingPopup = normalizeNowPlayingPopup(null)
+  patchNowPlayingPopup(overlay.nowPlayingPopup, req.body?.nowPlayingPopup)
+  if (overlay.id === state.activeId && req.body?.nowPlayingPopup && typeof req.body.nowPlayingPopup === 'object') {
+    applyActiveOverlayPlaybackDefault()
+  }
   saveState()
   broadcast()
-  res.json({ id: overlay.id, name: overlay.name })
+  res.json({ id: overlay.id, name: overlay.name, nowPlayingPopup: overlay.nowPlayingPopup })
 })
 
 app.post('/api/overlays/:id/activate', (req, res) => {
   if (!getOverlay(req.params.id)) return res.status(404).json({ error: 'Overlay not found' })
   state.activeId = req.params.id
+  applyActiveOverlayPlaybackDefault()
   saveState()
   broadcast()
   res.json({ activeId: state.activeId })
@@ -615,7 +701,8 @@ app.patch('/api/overlays/:id/modules/:moduleId', (req, res) => {
 
 app.get('/api/state', (req, res) => {
   const overlay = (req.query.id ? getOverlay(req.query.id) : null) ?? getActive()
-  res.json({ modules: overlay.modules })
+  if (!overlay.nowPlayingPopup) overlay.nowPlayingPopup = normalizeNowPlayingPopup(null)
+  res.json({ modules: overlay.modules, nowPlayingPopup: overlay.nowPlayingPopup })
 })
 
 app.get('/api/music', (req, res) => {
