@@ -24,6 +24,8 @@ const MUSIC_DIR = join(PUBLIC_DIR, 'Music')
 const DEFAULT_MUSIC_LIBRARY_PATH = '/Music'
 const DEFAULT_SONG_DURATION_SEC = 180
 const MAX_DEBUG_MESSAGES = 120
+const IMPORT_RATE_LIMIT_WINDOW_MS = 60_000
+const IMPORT_RATE_LIMIT_MAX_REQUESTS = 8
 const AUDIO_EXTENSIONS = new Set(['.mp3', '.ogg', '.wav'])
 const IMAGE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.webp'])
 const DEFAULT_SONG = {
@@ -37,8 +39,8 @@ const DEFAULT_SONG = {
 const musicDebugMessages = []
 // Limit import bursts to reduce abuse of repeated file-write operations.
 const musicImportLimiter = rateLimit({
-  windowMs: 60_000,
-  limit: 8,
+  windowMs: IMPORT_RATE_LIMIT_WINDOW_MS,
+  limit: IMPORT_RATE_LIMIT_MAX_REQUESTS,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many import attempts. Please wait and try again.' },
@@ -394,7 +396,7 @@ function mergeMusicState(savedMusic) {
     pauseStartedAt = savedMusic.playback.pauseStartedAt
   } else if (status === 'paused') {
     playbackStatus = 'playing'
-    logMusicDebug('Recovered from invalid paused state (missing pauseStartedAt timestamp). Playback resumed automatically. This may indicate data corruption or incomplete state save.', 'warn')
+    logMusicDebug('Recovered from invalid paused state: missing timestamp. Resumed playback automatically.', 'warn')
   }
   return {
     library: library.length > 0 ? library : [{ id: 'default-song', ...DEFAULT_SONG }],
@@ -684,7 +686,7 @@ app.post('/api/music/import', musicImportLimiter, (req, res) => {
 
   const artist = sanitizeSegment(artistRaw, 'Unknown Artist')
   const trackTitle = sanitizeSegment(trackNameRaw, 'Unknown Song')
-  const albumFolder = `Singles - ${artist}`
+  const albumFolder = `Imported - ${artist}`
   const albumDir = join(MUSIC_DIR, albumFolder)
   if (!existsSync(albumDir)) mkdirSync(albumDir, { recursive: true })
 

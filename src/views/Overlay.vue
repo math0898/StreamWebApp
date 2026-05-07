@@ -183,7 +183,10 @@ function refreshMusicProgress() {
 const shouldShowNowPlaying = computed(() => {
   if (!music.value?.song?.durationSec) return false
   const duration = music.value.song.durationSec
-  const currentTime = (musicProgressPct.value / 100) * duration
+  const audio = audioRef.value
+  const currentTime = audio && Number.isFinite(audio.currentTime)
+    ? audio.currentTime
+    : computeElapsedSec(music.value)
   return currentTime <= INTRO_POPUP_WINDOW_SEC || (duration - currentTime) <= OUTRO_POPUP_WINDOW_SEC
 })
 
