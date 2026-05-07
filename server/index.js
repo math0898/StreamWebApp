@@ -1,6 +1,6 @@
 import express from 'express'
-import { readFileSync, writeFileSync } from 'fs'
-import { join, dirname } from 'path'
+import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync } from 'fs'
+import { join, dirname, extname } from 'path'
 import { fileURLToPath } from 'url'
 import { randomUUID } from 'crypto'
 import {
@@ -18,8 +18,13 @@ import {
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const DATA_FILE = join(__dirname, 'data.json')
+const PUBLIC_DIR = join(__dirname, '..', 'public')
+const MUSIC_DIR = join(PUBLIC_DIR, 'Music')
 const DEFAULT_MUSIC_LIBRARY_PATH = '/Music'
 const DEFAULT_SONG_DURATION_SEC = 180
+const MAX_DEBUG_MESSAGES = 120
+const AUDIO_EXTENSIONS = new Set(['.mp3', '.ogg', '.wav'])
+const IMAGE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.webp'])
 const DEFAULT_SONG = {
   title: 'Default Song',
   artist: 'Unknown Artist',
@@ -28,6 +33,7 @@ const DEFAULT_SONG = {
   audioPath: `${DEFAULT_MUSIC_LIBRARY_PATH}/Default Album - Unknown Artist/Default Song.mp3`,
   durationSec: DEFAULT_SONG_DURATION_SEC,
 }
+const musicDebugMessages = []
 
 function newId() { return randomUUID().slice(0, 8) }
 
@@ -192,8 +198,142 @@ function saveState() {
   }
 }
 
+function logMusicDebug(message, level = 'info') {
+  const entry = `${new Date().toISOString()} [${level}] ${message}`
+  musicDebugMessages.push(entry)
+  if (musicDebugMessages.length > MAX_DEBUG_MESSAGES) {
+    musicDebugMessages.splice(0, musicDebugMessages.length - MAX_DEBUG_MESSAGES)
+  }
+}
+
+function sanitizeSegment(raw, fallback = 'Unknown') {
+  const value = String(raw ?? '').trim()
+  const cleaned = value
+    .replace(/[<>:"/\\|?*\u0000-\u001F]/g, '')
+    .replace(/\s+/g, ' ')
+    .replace(/\.+$/g, '')
+    .trim()
+  return cleaned || fallback
+}
+
+function toWebPath(absPath) {
+  const rel = absPath.slice(PUBLIC_DIR.length).replaceAll('\\', '/')
+  return rel.startsWith('/') ? rel : `/${rel}`
+}
+
+function parseAlbumFolderName(folderName) {
+  const idx = folderName.lastIndexOf(' - ')
+  if (idx <= 0) return { album: folderName, artist: 'Unknown Artist' }
+  return {
+    album: folderName.slice(0, idx).trim() || folderName,
+    artist: folderName.slice(idx + 3).trim() || 'Unknown Artist',
+  }
+}
+
+function readMusicLibraryFromDisk() {
+  if (!existsSync(MUSIC_DIR)) mkdirSync(MUSIC_DIR, { recursive: true })
+  const tracks = []
+  const albumFolders = readdirSync(MUSIC_DIR, { withFileTypes: true }).filter(entry => entry.isDirectory())
+
+  for (const albumFolder of albumFolders) {
+    const folderName = albumFolder.name
+    const { album, artist } = parseAlbumFolderName(folderName)
+    const albumAbsPath = join(MUSIC_DIR, folderName)
+    const files = readdirSync(albumAbsPath, { withFileTypes: true }).filter(entry => entry.isFile())
+    const imageFile = files.find(file => IMAGE_EXTENSIONS.has(extname(file.name).toLowerCase()))
+    const coverPath = imageFile ? toWebPath(join(albumAbsPath, imageFile.name)) : DEFAULT_SONG.coverPath
+
+    for (const audioFile of files) {
+      const audioExt = extname(audioFile.name).toLowerCase()
+      if (!AUDIO_EXTENSIONS.has(audioExt)) continue
+      const title = audioFile.name.slice(0, -audioExt.length) || 'Unknown Song'
+      tracks.push({
+        id: `${folderName}::${audioFile.name}`,
+        title,
+        artist,
+        album,
+        coverPath,
+        audioPath: toWebPath(join(albumAbsPath, audioFile.name)),
+        durationSec: DEFAULT_SONG_DURATION_SEC,
+      })
+    }
+  }
+
+  tracks.sort((a, b) => {
+    if (a.artist !== b.artist) return a.artist.localeCompare(b.artist)
+    if (a.album !== b.album) return a.album.localeCompare(b.album)
+    return a.title.localeCompare(b.title)
+  })
+
+  return tracks
+}
+
+function setNowPlaying(track) {
+  state.music.song = {
+    title: track.title,
+    artist: track.artist,
+    album: track.album,
+    coverPath: track.coverPath,
+    audioPath: track.audioPath,
+    durationSec: track.durationSec ?? DEFAULT_SONG_DURATION_SEC,
+  }
+  state.music.playback.sequence += 1
+  state.music.playback.status = 'playing'
+  state.music.playback.startedAt = Date.now()
+  state.music.playback.pauseStartedAt = null
+  state.music.playback.pausedMsTotal = 0
+}
+
+function reloadMusicLibrary() {
+  const currentPath = state.music?.song?.audioPath
+  const tracks = readMusicLibraryFromDisk()
+  state.music.library = tracks.length > 0 ? tracks : [{
+    id: 'default-song',
+    ...DEFAULT_SONG,
+  }]
+  const currentTrack = state.music.library.find(track => track.audioPath === currentPath)
+  if (currentTrack) {
+    state.music.song = {
+      title: currentTrack.title,
+      artist: currentTrack.artist,
+      album: currentTrack.album,
+      coverPath: currentTrack.coverPath,
+      audioPath: currentTrack.audioPath,
+      durationSec: currentTrack.durationSec,
+    }
+  } else {
+    setNowPlaying(state.music.library[0])
+  }
+  logMusicDebug(`Reloaded music library with ${state.music.library.length} track(s).`)
+}
+
+function parseDataUrl(dataUrl) {
+  if (typeof dataUrl !== 'string') return null
+  const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/)
+  if (!match) return null
+  try {
+    return {
+      mime: match[1].toLowerCase(),
+      buffer: Buffer.from(match[2], 'base64'),
+    }
+  } catch {
+    return null
+  }
+}
+
+function extensionForMime(mime, fallback = '') {
+  if (mime === 'audio/mpeg') return '.mp3'
+  if (mime === 'audio/ogg') return '.ogg'
+  if (mime === 'audio/wav' || mime === 'audio/x-wav') return '.wav'
+  if (mime === 'image/jpeg') return '.jpg'
+  if (mime === 'image/png') return '.png'
+  if (mime === 'image/webp') return '.webp'
+  return fallback
+}
+
 function createInitialMusicState() {
   return {
+    library: [{ id: 'default-song', ...DEFAULT_SONG }],
     song: { ...DEFAULT_SONG },
     playback: {
       status: 'playing',
@@ -206,6 +346,18 @@ function createInitialMusicState() {
 }
 
 function mergeMusicState(savedMusic) {
+  const savedLibrary = Array.isArray(savedMusic?.library) ? savedMusic.library : []
+  const library = savedLibrary
+    .filter(track => track && typeof track === 'object')
+    .map(track => ({
+      id: typeof track.id === 'string' && track.id.trim() ? track.id : `${track.album ?? 'Unknown'}::${track.title ?? 'Unknown'}`,
+      title: typeof track.title === 'string' && track.title.trim() ? track.title : DEFAULT_SONG.title,
+      artist: typeof track.artist === 'string' && track.artist.trim() ? track.artist : DEFAULT_SONG.artist,
+      album: typeof track.album === 'string' && track.album.trim() ? track.album : DEFAULT_SONG.album,
+      coverPath: typeof track.coverPath === 'string' && track.coverPath.trim() ? track.coverPath : DEFAULT_SONG.coverPath,
+      audioPath: typeof track.audioPath === 'string' && track.audioPath.trim() ? track.audioPath : DEFAULT_SONG.audioPath,
+      durationSec: typeof track.durationSec === 'number' && track.durationSec > 0 ? track.durationSec : DEFAULT_SONG_DURATION_SEC,
+    }))
   const mergedSong = {
     title: typeof savedMusic?.song?.title === 'string' && savedMusic.song.title.trim() ? savedMusic.song.title : DEFAULT_SONG.title,
     artist: typeof savedMusic?.song?.artist === 'string' && savedMusic.song.artist.trim() ? savedMusic.song.artist : DEFAULT_SONG.artist,
@@ -222,6 +374,7 @@ function mergeMusicState(savedMusic) {
       : Date.now()
   }
   return {
+    library: library.length > 0 ? library : [{ id: 'default-song', ...DEFAULT_SONG }],
     song: mergedSong,
     playback: {
       status,
@@ -239,6 +392,8 @@ function mergeMusicState(savedMusic) {
 
 function getMusicSnapshot() {
   return {
+    library: state.music.library,
+    debugMessages: musicDebugMessages,
     song: { ...state.music.song },
     status: state.music.playback.status,
     sequence: state.music.playback.sequence,
@@ -279,9 +434,10 @@ const app = express()
 const PORT = 3302
 
 let state = loadState()
+reloadMusicLibrary()
 const clients = new Set()
 
-app.use(express.json())
+app.use(express.json({ limit: '50mb' }))
 
 function getOverlay(id) {
   return state.overlays.find(o => o.id === id) ?? null
@@ -441,6 +597,89 @@ app.get('/api/state', (req, res) => {
 
 app.get('/api/music', (req, res) => {
   res.json(getMusicSnapshot())
+})
+
+app.get('/api/music/library', (req, res) => {
+  res.json(getMusicSnapshot())
+})
+
+app.post('/api/music/reload', (req, res) => {
+  reloadMusicLibrary()
+  saveState()
+  broadcast()
+  res.json(getMusicSnapshot())
+})
+
+app.post('/api/music/select', (req, res) => {
+  const trackId = typeof req.body?.id === 'string' ? req.body.id : ''
+  const track = state.music.library.find(item => item.id === trackId)
+  if (!track) return res.status(404).json({ error: 'Track not found' })
+  setNowPlaying(track)
+  logMusicDebug(`Set now playing track to "${track.title}" by ${track.artist}.`)
+  saveState()
+  broadcast()
+  res.json(getMusicSnapshot())
+})
+
+app.post('/api/music/import', (req, res) => {
+  const artistRaw = req.body?.artist
+  const trackNameRaw = req.body?.trackName
+  const trackDataUrl = req.body?.trackDataUrl
+  const coverDataUrl = req.body?.coverDataUrl
+  const trackFileName = req.body?.trackFileName
+  const coverFileName = req.body?.coverFileName
+
+  if (typeof artistRaw !== 'string' || !artistRaw.trim()) {
+    return res.status(400).json({ error: 'Artist is required' })
+  }
+  if (typeof trackNameRaw !== 'string' || !trackNameRaw.trim()) {
+    return res.status(400).json({ error: 'Track name is required' })
+  }
+
+  const trackPayload = parseDataUrl(trackDataUrl)
+  const coverPayload = parseDataUrl(coverDataUrl)
+  if (!trackPayload || !trackPayload.mime.startsWith('audio/')) {
+    return res.status(400).json({ error: 'Invalid track file payload' })
+  }
+  if (!coverPayload || !coverPayload.mime.startsWith('image/')) {
+    return res.status(400).json({ error: 'Invalid cover image payload' })
+  }
+
+  const requestedTrackExt = extname(String(trackFileName ?? '')).toLowerCase()
+  const trackExt = AUDIO_EXTENSIONS.has(requestedTrackExt)
+    ? requestedTrackExt
+    : extensionForMime(trackPayload.mime, '')
+  if (!AUDIO_EXTENSIONS.has(trackExt)) {
+    return res.status(400).json({ error: 'Unsupported track format. Use .mp3, .ogg, or .wav' })
+  }
+
+  const requestedCoverExt = extname(String(coverFileName ?? '')).toLowerCase()
+  const coverExt = IMAGE_EXTENSIONS.has(requestedCoverExt)
+    ? requestedCoverExt
+    : extensionForMime(coverPayload.mime, '.jpg')
+  if (!IMAGE_EXTENSIONS.has(coverExt)) {
+    return res.status(400).json({ error: 'Unsupported cover format. Use .jpg, .jpeg, .png, or .webp' })
+  }
+
+  const artist = sanitizeSegment(artistRaw, 'Unknown Artist')
+  const trackTitle = sanitizeSegment(trackNameRaw, 'Unknown Song')
+  const albumFolder = `Singles - ${artist}`
+  const albumDir = join(MUSIC_DIR, albumFolder)
+  if (!existsSync(albumDir)) mkdirSync(albumDir, { recursive: true })
+
+  const trackPath = join(albumDir, `${trackTitle}${trackExt}`)
+  const coverPath = join(albumDir, `cover${coverExt}`)
+
+  writeFileSync(trackPath, trackPayload.buffer)
+  writeFileSync(coverPath, coverPayload.buffer)
+
+  reloadMusicLibrary()
+  const importedTrack = state.music.library.find(track => track.audioPath === toWebPath(trackPath))
+  if (importedTrack) setNowPlaying(importedTrack)
+  logMusicDebug(`Imported track "${trackTitle}" by ${artist}.`)
+  saveState()
+  broadcast()
+  res.status(201).json(getMusicSnapshot())
 })
 
 app.post('/api/music/pause', (req, res) => {
