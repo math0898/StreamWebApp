@@ -26,6 +26,7 @@ const DEFAULT_SONG_DURATION_SEC = 0
 const MAX_DEBUG_MESSAGES = 120
 const IMPORT_RATE_LIMIT_WINDOW_MS = 60_000
 const IMPORT_RATE_LIMIT_MAX_REQUESTS = 8
+const DOT_CHAR_CODE = 46
 const AUDIO_EXTENSIONS = new Set(['.mp3', '.ogg', '.wav'])
 const IMAGE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.webp'])
 const AUDIO_MIME_TYPES = new Set(['audio/mpeg', 'audio/ogg', 'audio/wav', 'audio/x-wav'])
@@ -321,7 +322,7 @@ function sanitizeSegment(raw, fallback = 'Unknown') {
     .replace(/\s+/g, ' ')
     .trim()
   let end = cleaned.length
-  while (end > 0 && cleaned.charCodeAt(end - 1) === 46) end -= 1
+  while (end > 0 && cleaned.charCodeAt(end - 1) === DOT_CHAR_CODE) end -= 1
   const withoutTrailingDots = cleaned.slice(0, end).trimEnd()
   return withoutTrailingDots || fallback
 }
@@ -813,8 +814,9 @@ app.post('/api/music/import', musicImportLimiter, (req, res) => {
     writeFileSync(trackPath, trackPayload.buffer)
     writeFileSync(coverPath, coverPayload.buffer)
   } catch (err) {
-    logMusicDebug(`Import file write failed for "${trackTitle}" by ${artist}.`, 'error')
-    return res.status(500).json({ error: 'Failed to write imported files' })
+    const detail = err instanceof Error ? err.message : String(err)
+    logMusicDebug(`Import file write failed for "${trackTitle}" by ${artist}: ${detail}`, 'error')
+    return res.status(500).json({ error: `Failed to write imported files: ${detail}` })
   }
 
   reloadMusicLibrary()
