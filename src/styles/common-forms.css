@@ -1,0 +1,70 @@
+/* =========================================================
+   Shared input primitives for Dashboard + Modules views
+   ========================================================= */
+
+.dashboard input[type='number'],
+.dashboard input[type='text'],
+.modules input[type='number'],
+.modules input[type='text'] {
+  background-color: #1e1e1e;
+  color: #e0e0e0;
+  border: 1px solid #424242;
+  border-radius: 6px;
+}
+
+.dashboard input[type='color'],
+.modules input[type='color'] {
+  background-color: #1e1e1e;
+  border: 1px solid #424242;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+/* =========================================================
+   Dashboard form sizing
+   ========================================================= */
+
+.dashboard input[type='number'] {
+  padding: 0.3rem 0.5rem;
+  font-size: 0.85rem;
+  width: 6.5rem;
+  text-align: center;
+}
+
+.dashboard input[type='text'] {
+  padding: 0.3rem 0.5rem;
+  font-size: 0.85rem;
+  width: 8rem;
+  text-align: left;
+}
+
+.dashboard input[type='color'] {
+  width: 3rem;
+  height: 1.9rem;
+  padding: 0.1rem;
+}
+
+/* =========================================================
+   Modules form sizing
+   ========================================================= */
+
+.modules input[type='number'],
+.modules input[type='text'] {
+  padding: 0.35rem 0.65rem;
+  font-size: 0.9rem;
+  width: 9rem;
+}
+
+.modules input[type='number'] {
+  text-align: center;
+}
+
+.modules input[type='text'] {
+  text-align: left;
+}
+
+.modules input[type='color'] {
+  width: 3rem;
+  height: 2rem;
+  padding: 0.15rem;
+}

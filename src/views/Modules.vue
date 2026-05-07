@@ -264,35 +264,9 @@ h1 {
   flex-shrink: 0;
 }
 
-input[type='number'],
-input[type='text'] {
-  background-color: #1e1e1e;
-  color: #e0e0e0;
-  border: 1px solid #424242;
-  border-radius: 6px;
-  padding: 0.35rem 0.65rem;
-  font-size: 0.9rem;
-  width: 9rem;
-  text-align: center;
-}
-
-input[type='text'] {
-  text-align: left;
-}
-
 .wide-input {
   flex: 1;
   min-width: 0;
-}
-
-input[type='color'] {
-  background-color: #1e1e1e;
-  border: 1px solid #424242;
-  border-radius: 6px;
-  width: 3rem;
-  height: 2rem;
-  padding: 0.15rem;
-  cursor: pointer;
 }
 
 .reset-factory-btn {

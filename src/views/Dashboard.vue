@@ -705,42 +705,10 @@ h1 {
   margin: 0.55rem 0 0.3rem;
 }
 
-input[type='number'] {
-  background-color: #1e1e1e;
-  color: #e0e0e0;
-  border: 1px solid #424242;
-  border-radius: 6px;
-  padding: 0.3rem 0.5rem;
-  font-size: 0.85rem;
-  width: 6.5rem;
-  text-align: center;
-}
-
-input[type='text'] {
-  background-color: #1e1e1e;
-  color: #e0e0e0;
-  border: 1px solid #424242;
-  border-radius: 6px;
-  padding: 0.3rem 0.5rem;
-  font-size: 0.85rem;
-  width: 8rem;
-  text-align: left;
-}
-
 .wide-input {
   flex: 1;
   min-width: 0;
   width: auto !important;
-}
-
-input[type='color'] {
-  background-color: #1e1e1e;
-  border: 1px solid #424242;
-  border-radius: 6px;
-  width: 3rem;
-  height: 1.9rem;
-  padding: 0.1rem;
-  cursor: pointer;
 }
 
 .reset-sm {
