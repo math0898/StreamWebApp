@@ -52,7 +52,7 @@
       </div>
 
       <div class="music-now-playing">
-        <p class="music-line"><strong>Now Playing:</strong> {{ music?.song?.title ?? 'Default Song' }}</p>
+        <p class="music-line"><strong>Now Playing:</strong> {{ music?.song?.title ?? 'Unknown Song' }}</p>
         <p class="music-line"><strong>Artist:</strong> {{ music?.song?.artist ?? 'Unknown Artist' }}</p>
       </div>
 

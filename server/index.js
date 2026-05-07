@@ -255,7 +255,7 @@ function pauseMusic() {
 function resumeMusic() {
   if (state.music.playback.status !== 'paused') return false
   const now = Date.now()
-  if (state.music.playback.pauseStartedAt == null) {
+  if (state.music.playback.pauseStartedAt === null) {
     state.music.playback.pauseStartedAt = now
   }
   const pausedFor = Math.max(0, now - state.music.playback.pauseStartedAt)

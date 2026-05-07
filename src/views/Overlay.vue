@@ -36,7 +36,7 @@
 
       <transition name="now-playing-pop">
         <div v-if="shouldShowNowPlaying" class="now-playing-popup">
-          <img class="now-playing-cover" :src="music?.song?.coverPath" :alt="`${music?.song?.album ?? 'Album'} cover`" />
+          <img class="now-playing-cover" :src="music?.song?.coverPath" :alt="`Album art for ${music?.song?.album ?? 'current track'}`" />
           <div class="now-playing-info">
             <p class="now-playing-title">{{ music?.song?.title ?? 'Unknown Song' }}</p>
             <p class="now-playing-artist">{{ music?.song?.artist ?? 'Unknown Artist' }}</p>
