@@ -670,7 +670,7 @@ app.patch('/api/overlays/:id', (req, res) => {
   if (typeof req.body?.name === 'string' && req.body.name.trim()) overlay.name = req.body.name.trim()
   if (!overlay.nowPlayingPopup) overlay.nowPlayingPopup = normalizeNowPlayingPopup(null)
   patchNowPlayingPopup(overlay.nowPlayingPopup, req.body?.nowPlayingPopup)
-  if (overlay.id === state.activeId && req.body?.nowPlayingPopup && typeof req.body.nowPlayingPopup === 'object') {
+  if (overlay.id === state.activeId && typeof req.body?.nowPlayingPopup?.defaultPlayMusic === 'boolean') {
     applyActiveOverlayPlaybackDefault()
   }
   saveState()

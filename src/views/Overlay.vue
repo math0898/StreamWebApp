@@ -239,7 +239,7 @@ function syncMusic(snapshot) {
   }
 
   const targetTime = computeElapsedSec(snapshot)
-  if (Number.isFinite(targetTime) && Math.abs((audio.currentTime || 0) - targetTime) > SYNC_TOLERANCE_SEC) {
+  if (Number.isFinite(targetTime) && Math.abs((audio.currentTime ?? 0) - targetTime) > SYNC_TOLERANCE_SEC) {
     try {
       audio.currentTime = targetTime
     } catch (err) {
