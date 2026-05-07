@@ -395,8 +395,8 @@ function setNowPlaying(track) {
   state.music.playback.pausedMsTotal = 0
 }
 
-function nextTrackFromLibrary() {
-  const list = state.music.library
+function nextTrackFromLibrary(overlayId = state.activeId) {
+  const list = getAllowedTracksForOverlay(overlayId)
   if (!Array.isArray(list) || list.length === 0) return null
   const currentPath = state.music?.song?.audioPath
   const idx = list.findIndex(track => track.audioPath === currentPath)
@@ -424,6 +424,8 @@ function reloadMusicLibrary() {
   } else {
     setNowPlaying(state.music.library[0])
   }
+  compactOverlayAlbumRules()
+  enforceActiveOverlayTrackRules('rules')
   logMusicDebug(`Reloaded music library with ${state.music.library.length} track(s).`)
 }
 
@@ -455,6 +457,7 @@ function createInitialMusicState() {
   return {
     library: [{ id: 'default-song', ...DEFAULT_SONG }],
     song: { ...DEFAULT_SONG },
+    overlayAlbumRules: {},
     playback: {
       status: 'playing',
       sequence: 1,
@@ -495,9 +498,18 @@ function mergeMusicState(savedMusic) {
     playbackStatus = 'playing'
     logMusicDebug('Recovered from invalid paused state: missing timestamp. Resumed playback automatically.', 'warn')
   }
+  const savedOverlayAlbumRules = savedMusic?.overlayAlbumRules && typeof savedMusic.overlayAlbumRules === 'object'
+    ? savedMusic.overlayAlbumRules
+    : {}
+  const overlayAlbumRules = Object.fromEntries(
+    Object.entries(savedOverlayAlbumRules)
+      .filter(([key]) => typeof key === 'string' && key.trim())
+      .map(([overlayId, rawRule]) => [overlayId, normalizeOverlayAlbumRule(rawRule)])
+  )
   return {
     library: library.length > 0 ? library : [{ id: 'default-song', ...DEFAULT_SONG }],
     song: mergedSong,
+    overlayAlbumRules,
     playback: {
       status: playbackStatus,
       sequence: typeof savedMusic?.playback?.sequence === 'number' && savedMusic.playback.sequence > 0
@@ -512,11 +524,112 @@ function mergeMusicState(savedMusic) {
   }
 }
 
+function uniqueNonEmptyStrings(values) {
+  if (!Array.isArray(values)) return []
+  const normalized = values
+    .map(value => typeof value === 'string' ? value.trim() : '')
+    .filter(Boolean)
+  return [...new Set(normalized)]
+}
+
+function normalizeOverlayAlbumRule(rawRule) {
+  return {
+    whitelistAlbums: uniqueNonEmptyStrings(rawRule?.whitelistAlbums),
+    blacklistAlbums: uniqueNonEmptyStrings(rawRule?.blacklistAlbums),
+    uniqueAlbums: uniqueNonEmptyStrings(rawRule?.uniqueAlbums),
+  }
+}
+
+function getOverlayAlbumRule(overlayId) {
+  if (!state.music.overlayAlbumRules || typeof state.music.overlayAlbumRules !== 'object') {
+    state.music.overlayAlbumRules = {}
+  }
+  if (!state.music.overlayAlbumRules[overlayId]) {
+    state.music.overlayAlbumRules[overlayId] = normalizeOverlayAlbumRule(null)
+  } else {
+    state.music.overlayAlbumRules[overlayId] = normalizeOverlayAlbumRule(state.music.overlayAlbumRules[overlayId])
+  }
+  return state.music.overlayAlbumRules[overlayId]
+}
+
+function compactOverlayAlbumRules() {
+  if (!state.music.overlayAlbumRules || typeof state.music.overlayAlbumRules !== 'object') {
+    state.music.overlayAlbumRules = {}
+  }
+  const allowedOverlayIds = new Set(state.overlays.map(overlay => overlay.id))
+  for (const overlayId of Object.keys(state.music.overlayAlbumRules)) {
+    if (!allowedOverlayIds.has(overlayId)) delete state.music.overlayAlbumRules[overlayId]
+  }
+  for (const overlayId of allowedOverlayIds) getOverlayAlbumRule(overlayId)
+}
+
+function patchOverlayAlbumRule(overlayId, nextRule) {
+  const normalized = normalizeOverlayAlbumRule(nextRule)
+  const target = getOverlayAlbumRule(overlayId)
+  target.whitelistAlbums = normalized.whitelistAlbums
+  target.blacklistAlbums = normalized.blacklistAlbums
+  target.uniqueAlbums = normalized.uniqueAlbums
+  for (const overlay of state.overlays) {
+    if (overlay.id === overlayId) continue
+    const rule = getOverlayAlbumRule(overlay.id)
+    rule.uniqueAlbums = rule.uniqueAlbums.filter(album => !target.uniqueAlbums.includes(album))
+  }
+}
+
+function getAlbumUniqueOwnerMap() {
+  const owners = new Map()
+  for (const overlay of state.overlays) {
+    const rule = getOverlayAlbumRule(overlay.id)
+    for (const album of rule.uniqueAlbums) {
+      if (!owners.has(album)) owners.set(album, overlay.id)
+    }
+  }
+  return owners
+}
+
+function isTrackAllowedForOverlay(track, overlayId, uniqueOwnerMap = getAlbumUniqueOwnerMap()) {
+  const album = typeof track?.album === 'string' ? track.album.trim() : ''
+  if (!album) return true
+  const rule = getOverlayAlbumRule(overlayId)
+  if (rule.whitelistAlbums.length > 0 && !rule.whitelistAlbums.includes(album)) return false
+  if (rule.blacklistAlbums.includes(album)) return false
+  const uniqueOwner = uniqueOwnerMap.get(album)
+  if (uniqueOwner && uniqueOwner !== overlayId) return false
+  return true
+}
+
+function getAllowedTracksForOverlay(overlayId) {
+  const list = Array.isArray(state.music.library) ? state.music.library : []
+  const uniqueOwnerMap = getAlbumUniqueOwnerMap()
+  return list.filter(track => isTrackAllowedForOverlay(track, overlayId, uniqueOwnerMap))
+}
+
+function enforceActiveOverlayTrackRules(reason = 'rule update') {
+  const active = getActive()
+  if (!active) return false
+  const allowedTracks = getAllowedTracksForOverlay(active.id)
+  const currentPath = state.music?.song?.audioPath
+  const currentAllowed = allowedTracks.some(track => track.audioPath === currentPath)
+  if (currentAllowed) return false
+  if (allowedTracks.length > 0) {
+    setNowPlaying(allowedTracks[0])
+    logMusicDebug(`Switched track due to active overlay music ${reason}.`)
+    return true
+  }
+  pauseMusic()
+  logMusicDebug(`No tracks satisfy active overlay music ${reason}; playback paused.`, 'warn')
+  return false
+}
+
 function getMusicSnapshot() {
+  compactOverlayAlbumRules()
   return {
     library: state.music.library,
     debugMessages: musicDebugMessages,
     song: { ...state.music.song },
+    activeOverlayId: state.activeId,
+    overlays: state.overlays.map(overlay => ({ id: overlay.id, name: overlay.name })),
+    overlayAlbumRules: state.music.overlayAlbumRules,
     status: state.music.playback.status,
     sequence: state.music.playback.sequence,
     startedAt: state.music.playback.startedAt,
@@ -552,7 +665,7 @@ function resumeMusic() {
 }
 
 function skipSong() {
-  const next = nextTrackFromLibrary()
+  const next = nextTrackFromLibrary(state.activeId)
   if (!next) return
   setNowPlaying(next)
 }
@@ -561,6 +674,7 @@ const app = express()
 const PORT = 3302
 
 let state = loadState()
+compactOverlayAlbumRules()
 reloadMusicLibrary()
 const clients = new Set()
 
@@ -644,6 +758,7 @@ app.post('/api/overlays', (req, res) => {
     modules: [createModule('progressBar', state.moduleDefaults, newId)],
   }
   state.overlays.push(overlay)
+  getOverlayAlbumRule(overlay.id)
   saveState()
   broadcast()
   res.status(201).json({ id: overlay.id, name: overlay.name, nowPlayingPopup: overlay.nowPlayingPopup })
@@ -655,7 +770,11 @@ app.delete('/api/overlays/:id', (req, res) => {
   if (idx === -1) return res.status(404).json({ error: 'Overlay not found' })
   const wasActive = state.activeId === req.params.id
   state.overlays.splice(idx, 1)
+  if (state.music?.overlayAlbumRules && typeof state.music.overlayAlbumRules === 'object') {
+    delete state.music.overlayAlbumRules[req.params.id]
+  }
   if (wasActive) state.activeId = state.overlays[0].id
+  enforceActiveOverlayTrackRules('rules')
   saveState()
   broadcast()
   res.json({
@@ -681,7 +800,9 @@ app.patch('/api/overlays/:id', (req, res) => {
 app.post('/api/overlays/:id/activate', (req, res) => {
   if (!getOverlay(req.params.id)) return res.status(404).json({ error: 'Overlay not found' })
   state.activeId = req.params.id
+  getOverlayAlbumRule(state.activeId)
   applyActiveOverlayPlaybackDefault()
+  enforceActiveOverlayTrackRules('rules')
   saveState()
   broadcast()
   res.json({ activeId: state.activeId })
@@ -754,8 +875,22 @@ app.post('/api/music/select', (req, res) => {
   const trackId = typeof req.body?.id === 'string' ? req.body.id : ''
   const track = state.music.library.find(item => item.id === trackId)
   if (!track) return res.status(404).json({ error: 'Track not found' })
+  if (!isTrackAllowedForOverlay(track, state.activeId)) {
+    return res.status(400).json({ error: 'Track album is not allowed for the active overlay' })
+  }
   setNowPlaying(track)
   logMusicDebug(`Set now playing track to "${track.title}" by ${track.artist}.`)
+  saveState()
+  broadcast()
+  res.json(getMusicSnapshot())
+})
+
+app.post('/api/music/rules', (req, res) => {
+  const overlayId = typeof req.body?.overlayId === 'string' ? req.body.overlayId : ''
+  const overlay = getOverlay(overlayId)
+  if (!overlay) return res.status(404).json({ error: 'Overlay not found' })
+  patchOverlayAlbumRule(overlayId, req.body?.rules)
+  enforceActiveOverlayTrackRules('rules')
   saveState()
   broadcast()
   res.json(getMusicSnapshot())

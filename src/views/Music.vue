@@ -62,6 +62,57 @@
     </section>
 
     <section class="panel">
+      <div class="panel-header">
+        <h2>Overlay Album Rules</h2>
+        <button class="action-btn" @click="saveOverlayRules" :disabled="savingRules || !selectedOverlayId">
+          {{ savingRules ? 'Saving…' : 'Save Rules' }}
+        </button>
+      </div>
+      <p class="muted">Active Overlay: <strong>{{ activeOverlayName }}</strong></p>
+      <label class="field">
+        <span>Edit Rules For Overlay</span>
+        <select v-model="selectedOverlayId">
+          <option v-for="overlay in overlays" :key="overlay.id" :value="overlay.id">{{ overlay.name }}</option>
+        </select>
+      </label>
+      <p class="muted small">
+        Whitelist: only listed albums can play on this overlay. Blacklist: listed albums cannot play on this overlay.
+        Unique: listed albums are reserved for this overlay and removed from other overlays.
+      </p>
+      <p class="muted" v-if="albumNames.length === 0">No albums found in the loaded music library.</p>
+      <div v-else class="rules-grid">
+        <div class="rules-head album-col">Album</div>
+        <div class="rules-head">Whitelist</div>
+        <div class="rules-head">Blacklist</div>
+        <div class="rules-head">Unique</div>
+        <template v-for="album in albumNames" :key="album">
+          <div class="rules-cell album-col">{{ album }}</div>
+          <div class="rules-cell">
+            <input
+              type="checkbox"
+              :checked="ruleHas('whitelistAlbums', album)"
+              @change="toggleRule('whitelistAlbums', album, $event.target.checked)"
+            />
+          </div>
+          <div class="rules-cell">
+            <input
+              type="checkbox"
+              :checked="ruleHas('blacklistAlbums', album)"
+              @change="toggleRule('blacklistAlbums', album, $event.target.checked)"
+            />
+          </div>
+          <div class="rules-cell">
+            <input
+              type="checkbox"
+              :checked="ruleHas('uniqueAlbums', album)"
+              @change="toggleRule('uniqueAlbums', album, $event.target.checked)"
+            />
+          </div>
+        </template>
+      </div>
+    </section>
+
+    <section class="panel">
       <h2>Debug Messages</h2>
       <div class="debug-box">
         <p v-for="(line, idx) in debugMessagesReversed" :key="`${idx}-${line}`" class="debug-line">{{ line }}</p>
@@ -79,8 +130,13 @@ const music = reactive({
 })
 const tracks = ref([])
 const debugMessages = ref([])
+const overlays = ref([])
+const activeOverlayId = ref('')
+const selectedOverlayId = ref('')
+const overlayAlbumRules = ref({})
 const reloading = ref(false)
 const importing = ref(false)
+const savingRules = ref(false)
 const formMessage = ref('')
 
 const form = reactive({
@@ -91,15 +147,51 @@ const form = reactive({
 })
 
 const debugMessagesReversed = computed(() => [...debugMessages.value].reverse())
+const albumNames = computed(() => {
+  const names = tracks.value
+    .map(track => typeof track?.album === 'string' ? track.album.trim() : '')
+    .filter(Boolean)
+  return [...new Set(names)].sort((a, b) => a.localeCompare(b))
+})
+const activeOverlayName = computed(() => {
+  const active = overlays.value.find(overlay => overlay.id === activeOverlayId.value)
+  return active?.name ?? 'Unknown'
+})
 
-async function fetchLibrary() {
-  const res = await fetch('/api/music/library')
-  if (!res.ok) throw new Error('Failed to load library')
-  const data = await res.json()
+function normalizeRule(rule) {
+  const toList = (values) => {
+    if (!Array.isArray(values)) return []
+    return [...new Set(values.map(v => typeof v === 'string' ? v.trim() : '').filter(Boolean))]
+  }
+  return {
+    whitelistAlbums: toList(rule?.whitelistAlbums),
+    blacklistAlbums: toList(rule?.blacklistAlbums),
+    uniqueAlbums: toList(rule?.uniqueAlbums),
+  }
+}
+
+function applyMusicSnapshot(data) {
   music.song = data.song
   music.status = data.status
   tracks.value = Array.isArray(data.library) ? data.library : []
   debugMessages.value = Array.isArray(data.debugMessages) ? data.debugMessages : []
+  overlays.value = Array.isArray(data.overlays) ? data.overlays : []
+  activeOverlayId.value = typeof data.activeOverlayId === 'string' ? data.activeOverlayId : ''
+  const nextRules = {}
+  for (const overlay of overlays.value) {
+    nextRules[overlay.id] = normalizeRule(data.overlayAlbumRules?.[overlay.id])
+  }
+  overlayAlbumRules.value = nextRules
+  const hasSelected = overlays.value.some(overlay => overlay.id === selectedOverlayId.value)
+  if (!hasSelected) {
+    selectedOverlayId.value = activeOverlayId.value || overlays.value[0]?.id || ''
+  }
+}
+
+async function fetchLibrary() {
+  const res = await fetch('/api/music/library')
+  if (!res.ok) throw new Error('Failed to load library')
+  applyMusicSnapshot(await res.json())
 }
 
 async function reloadLibrary() {
@@ -108,11 +200,7 @@ async function reloadLibrary() {
   try {
     const res = await fetch('/api/music/reload', { method: 'POST' })
     if (!res.ok) throw new Error('Reload failed')
-    const data = await res.json()
-    music.song = data.song
-    music.status = data.status
-    tracks.value = Array.isArray(data.library) ? data.library : []
-    debugMessages.value = Array.isArray(data.debugMessages) ? data.debugMessages : []
+    applyMusicSnapshot(await res.json())
   } catch (err) {
     formMessage.value = `Reload failed: ${err.message}`
   } finally {
@@ -162,10 +250,7 @@ async function importMusic() {
     })
     const data = await res.json()
     if (!res.ok) throw new Error(data?.error ?? 'Import failed')
-    music.song = data.song
-    music.status = data.status
-    tracks.value = Array.isArray(data.library) ? data.library : []
-    debugMessages.value = Array.isArray(data.debugMessages) ? data.debugMessages : []
+    applyMusicSnapshot(data)
     formMessage.value = 'Track imported successfully.'
     form.artist = ''
     form.trackName = ''
@@ -188,12 +273,56 @@ async function playTrack(id) {
     })
     const data = await res.json()
     if (!res.ok) throw new Error(data?.error ?? 'Unable to set track')
-    music.song = data.song
-    music.status = data.status
-    tracks.value = Array.isArray(data.library) ? data.library : []
-    debugMessages.value = Array.isArray(data.debugMessages) ? data.debugMessages : []
+    applyMusicSnapshot(data)
   } catch (err) {
     formMessage.value = `Set track failed: ${err.message}`
+  }
+}
+
+function currentRule() {
+  return overlayAlbumRules.value[selectedOverlayId.value] ?? normalizeRule(null)
+}
+
+function ruleHas(type, album) {
+  return currentRule()[type].includes(album)
+}
+
+function toggleRule(type, album, checked) {
+  if (!selectedOverlayId.value) return
+  const next = normalizeRule(currentRule())
+  if (checked) {
+    if (!next[type].includes(album)) next[type].push(album)
+    if (type === 'whitelistAlbums') next.blacklistAlbums = next.blacklistAlbums.filter(name => name !== album)
+    if (type === 'blacklistAlbums') next.whitelistAlbums = next.whitelistAlbums.filter(name => name !== album)
+  } else {
+    next[type] = next[type].filter(name => name !== album)
+  }
+  overlayAlbumRules.value = {
+    ...overlayAlbumRules.value,
+    [selectedOverlayId.value]: next,
+  }
+}
+
+async function saveOverlayRules() {
+  if (!selectedOverlayId.value) return
+  savingRules.value = true
+  formMessage.value = ''
+  try {
+    const res = await fetch('/api/music/rules', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        overlayId: selectedOverlayId.value,
+        rules: currentRule(),
+      }),
+    })
+    const data = await res.json()
+    if (!res.ok) throw new Error(data?.error ?? 'Unable to save rules')
+    applyMusicSnapshot(data)
+  } catch (err) {
+    formMessage.value = `Save rules failed: ${err.message}`
+  } finally {
+    savingRules.value = false
   }
 }
 
@@ -268,6 +397,14 @@ h1 {
   padding: 0.45rem 0.55rem;
 }
 
+.field select {
+  background: #1d1d1d;
+  border: 1px solid #383838;
+  border-radius: 6px;
+  color: #e0e0e0;
+  padding: 0.45rem 0.55rem;
+}
+
 .action-btn {
   font-size: 0.8rem;
   padding: 0.38rem 0.75rem;
@@ -332,6 +469,33 @@ h1 {
 
 .small {
   font-size: 0.82rem;
+}
+
+.rules-grid {
+  display: grid;
+  grid-template-columns: minmax(220px, 2fr) repeat(3, minmax(90px, 1fr));
+  border: 1px solid #2a2a2a;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.rules-head {
+  background: #1f1f1f;
+  color: #bdbdbd;
+  font-size: 0.8rem;
+  padding: 0.45rem 0.5rem;
+  text-align: center;
+  border-bottom: 1px solid #2a2a2a;
+}
+
+.rules-cell {
+  padding: 0.45rem 0.5rem;
+  border-bottom: 1px solid #242424;
+  text-align: center;
+}
+
+.album-col {
+  text-align: left;
 }
 
 .debug-box {
