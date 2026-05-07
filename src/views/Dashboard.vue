@@ -219,8 +219,8 @@ const steps   = reactive({})
 const setVals = reactive({})
 const editOpen = reactive({})
 const music = ref(null)
-const canPause = computed(() => music.value?.status !== 'paused')
-const canResume = computed(() => music.value?.status === 'paused')
+const canPause = computed(() => !!music.value && music.value.status !== 'paused')
+const canResume = computed(() => !!music.value && music.value.status === 'paused')
 
 const newModuleType = ref('progressBar')
 

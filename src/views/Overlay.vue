@@ -60,6 +60,7 @@ const musicProgressPct = ref(0)
 const INTRO_POPUP_WINDOW_SEC = 6
 const OUTRO_POPUP_WINDOW_SEC = 3
 const PROGRESS_UPDATE_INTERVAL_MS = 250
+const SYNC_TOLERANCE_SEC = 1
 let progressTimer = null
 let source = null
 
@@ -147,7 +148,7 @@ function syncMusic(snapshot) {
   }
 
   const targetTime = computeElapsedSec(snapshot)
-  if (Number.isFinite(targetTime) && Math.abs((audio.currentTime || 0) - targetTime) > 1) {
+  if (Number.isFinite(targetTime) && Math.abs((audio.currentTime || 0) - targetTime) > SYNC_TOLERANCE_SEC) {
     audio.currentTime = targetTime
   }
 
@@ -163,7 +164,7 @@ function syncMusic(snapshot) {
 function refreshMusicProgress() {
   const audio = audioRef.value
   const duration = music.value?.song?.durationSec ?? audio?.duration ?? 0
-  const current = Number.isFinite(audio?.currentTime) ? audio.currentTime : computeElapsedSec(music.value)
+  const current = audio && Number.isFinite(audio.currentTime) ? audio.currentTime : computeElapsedSec(music.value)
   const pctVal = duration > 0 ? Math.min(100, Math.max(0, (current / duration) * 100)) : 0
   musicProgressPct.value = pctVal
 }
