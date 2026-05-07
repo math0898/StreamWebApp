@@ -699,7 +699,9 @@ async function patchPopupSettings(patch) {
     applyPopupSettings(data.nowPlayingPopup ?? {})
     const ov = overlayList.value.find(o => o.id === editingId.value)
     if (ov) ov.nowPlayingPopup = data.nowPlayingPopup
-    await fetchMusicState()
+    if (typeof patch.defaultPlayMusic === 'boolean') {
+      await fetchMusicState()
+    }
   } catch (err) {
     console.warn('[dashboard] Failed to patch popup settings:', err)
     try { await fetchOverlayState(editingId.value) } catch (refreshErr) {
