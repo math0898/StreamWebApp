@@ -167,6 +167,7 @@ async function importMusic() {
     tracks.value = Array.isArray(data.library) ? data.library : []
     debugMessages.value = Array.isArray(data.debugMessages) ? data.debugMessages : []
     formMessage.value = 'Track imported successfully.'
+    form.artist = ''
     form.trackName = ''
     form.trackFile = null
     form.coverFile = null

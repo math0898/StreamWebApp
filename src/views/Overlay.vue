@@ -123,9 +123,12 @@ function textModuleStyle(mod) {
 
 function computeElapsedSec(snapshot, nowMs = Date.now()) {
   if (!snapshot) return 0
-  const pausedBase = snapshot.status === 'paused'
-    ? (typeof snapshot.pauseStartedAt === 'number' ? snapshot.pauseStartedAt : snapshot.startedAt + snapshot.pausedMsTotal)
-    : nowMs
+  let pausedBase = nowMs
+  if (snapshot.status === 'paused') {
+    pausedBase = typeof snapshot.pauseStartedAt === 'number'
+      ? snapshot.pauseStartedAt
+      : snapshot.startedAt + snapshot.pausedMsTotal
+  }
   const elapsedMs = snapshot.status === 'paused'
     ? pausedBase - snapshot.startedAt - snapshot.pausedMsTotal
     : nowMs - snapshot.startedAt - snapshot.pausedMsTotal

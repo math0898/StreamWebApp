@@ -23,6 +23,8 @@ const MUSIC_DIR = join(PUBLIC_DIR, 'Music')
 const DEFAULT_MUSIC_LIBRARY_PATH = '/Music'
 const DEFAULT_SONG_DURATION_SEC = 180
 const MAX_DEBUG_MESSAGES = 120
+const IMPORT_RATE_WINDOW_MS = 60_000
+const IMPORT_RATE_MAX = 8
 const AUDIO_EXTENSIONS = new Set(['.mp3', '.ogg', '.wav'])
 const IMAGE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.webp'])
 const DEFAULT_SONG = {
@@ -34,6 +36,7 @@ const DEFAULT_SONG = {
   durationSec: DEFAULT_SONG_DURATION_SEC,
 }
 const musicDebugMessages = []
+const importRateByIp = new Map()
 
 function newId() { return randomUUID().slice(0, 8) }
 
@@ -211,9 +214,12 @@ function sanitizeSegment(raw, fallback = 'Unknown') {
   const cleaned = value
     .replace(/[<>:"/\\|?*\u0000-\u001F]/g, '')
     .replace(/\s+/g, ' ')
-    .replace(/\.+$/g, '')
     .trim()
-  return cleaned || fallback
+  let withoutTrailingDots = cleaned
+  while (withoutTrailingDots.endsWith('.')) {
+    withoutTrailingDots = withoutTrailingDots.slice(0, -1).trimEnd()
+  }
+  return withoutTrailingDots || fallback
 }
 
 function toWebPath(absPath) {
@@ -223,7 +229,7 @@ function toWebPath(absPath) {
 
 function parseAlbumFolderName(folderName) {
   const idx = folderName.lastIndexOf(' - ')
-  if (idx <= 0) return { album: folderName, artist: 'Unknown Artist' }
+  if (idx < 0) return { album: folderName, artist: 'Unknown Artist' }
   return {
     album: folderName.slice(0, idx).trim() || folderName,
     artist: folderName.slice(idx + 3).trim() || 'Unknown Artist',
@@ -284,6 +290,15 @@ function setNowPlaying(track) {
   state.music.playback.pausedMsTotal = 0
 }
 
+function nextTrackFromLibrary() {
+  const list = state.music.library
+  if (!Array.isArray(list) || list.length === 0) return null
+  const currentPath = state.music?.song?.audioPath
+  const idx = list.findIndex(track => track.audioPath === currentPath)
+  if (idx < 0) return list[0]
+  return list[(idx + 1) % list.length]
+}
+
 function reloadMusicLibrary() {
   const currentPath = state.music?.song?.audioPath
   const tracks = readMusicLibraryFromDisk()
@@ -331,6 +346,19 @@ function extensionForMime(mime, fallback = '') {
   return fallback
 }
 
+function isImportRateLimited(ipAddress) {
+  const now = Date.now()
+  const ip = ipAddress || 'unknown'
+  const bucket = importRateByIp.get(ip)
+  if (!bucket || now - bucket.windowStart >= IMPORT_RATE_WINDOW_MS) {
+    importRateByIp.set(ip, { windowStart: now, count: 1 })
+    return false
+  }
+  if (bucket.count >= IMPORT_RATE_MAX) return true
+  bucket.count += 1
+  return false
+}
+
 function createInitialMusicState() {
   return {
     library: [{ id: 'default-song', ...DEFAULT_SONG }],
@@ -368,16 +396,18 @@ function mergeMusicState(savedMusic) {
   }
   const status = savedMusic?.playback?.status === 'paused' ? 'paused' : 'playing'
   let pauseStartedAt = null
-  if (status === 'paused') {
-    pauseStartedAt = typeof savedMusic?.playback?.pauseStartedAt === 'number'
-      ? savedMusic.playback.pauseStartedAt
-      : Date.now()
+  let playbackStatus = status
+  if (status === 'paused' && typeof savedMusic?.playback?.pauseStartedAt === 'number') {
+    pauseStartedAt = savedMusic.playback.pauseStartedAt
+  } else if (status === 'paused') {
+    playbackStatus = 'playing'
+    logMusicDebug('Recovered invalid paused playback state without pauseStartedAt; resumed as playing.', 'warn')
   }
   return {
     library: library.length > 0 ? library : [{ id: 'default-song', ...DEFAULT_SONG }],
     song: mergedSong,
     playback: {
-      status,
+      status: playbackStatus,
       sequence: typeof savedMusic?.playback?.sequence === 'number' && savedMusic.playback.sequence > 0
         ? savedMusic.playback.sequence
         : 1,
@@ -423,11 +453,9 @@ function resumeMusic() {
 }
 
 function skipSong() {
-  state.music.playback.sequence += 1
-  state.music.playback.status = 'playing'
-  state.music.playback.startedAt = Date.now()
-  state.music.playback.pauseStartedAt = null
-  state.music.playback.pausedMsTotal = 0
+  const next = nextTrackFromLibrary()
+  if (!next) return
+  setNowPlaying(next)
 }
 
 const app = express()
@@ -622,6 +650,9 @@ app.post('/api/music/select', (req, res) => {
 })
 
 app.post('/api/music/import', (req, res) => {
+  if (isImportRateLimited(req.ip)) {
+    return res.status(429).json({ error: 'Too many import attempts. Please wait and try again.' })
+  }
   const artistRaw = req.body?.artist
   const trackNameRaw = req.body?.trackName
   const trackDataUrl = req.body?.trackDataUrl
