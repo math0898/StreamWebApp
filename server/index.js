@@ -393,6 +393,7 @@ function setNowPlaying(track) {
   state.music.playback.startedAt = Date.now()
   state.music.playback.pauseStartedAt = null
   state.music.playback.pausedMsTotal = 0
+  state.music.rulePauseActive = false
 }
 
 function nextTrackFromLibrary(overlayId = state.activeId) {
@@ -457,7 +458,8 @@ function createInitialMusicState() {
   return {
     library: [{ id: 'default-song', ...DEFAULT_SONG }],
     song: { ...DEFAULT_SONG },
-    overlayAlbumRules: {},
+    overlayAlbumRules: Object.create(null),
+    rulePauseActive: false,
     playback: {
       status: 'playing',
       sequence: 1,
@@ -500,16 +502,17 @@ function mergeMusicState(savedMusic) {
   }
   const savedOverlayAlbumRules = savedMusic?.overlayAlbumRules && typeof savedMusic.overlayAlbumRules === 'object'
     ? savedMusic.overlayAlbumRules
-    : {}
-  const overlayAlbumRules = Object.fromEntries(
-    Object.entries(savedOverlayAlbumRules)
-      .filter(([key]) => typeof key === 'string' && key.trim())
-      .map(([overlayId, rawRule]) => [overlayId, normalizeOverlayAlbumRule(rawRule)])
-  )
+    : Object.create(null)
+  const overlayAlbumRules = Object.create(null)
+  for (const [overlayId, rawRule] of Object.entries(savedOverlayAlbumRules)) {
+    if (!isSafeOverlayRuleKey(overlayId)) continue
+    overlayAlbumRules[overlayId] = normalizeOverlayAlbumRule(rawRule)
+  }
   return {
     library: library.length > 0 ? library : [{ id: 'default-song', ...DEFAULT_SONG }],
     song: mergedSong,
     overlayAlbumRules,
+    rulePauseActive: savedMusic?.rulePauseActive === true,
     playback: {
       status: playbackStatus,
       sequence: typeof savedMusic?.playback?.sequence === 'number' && savedMusic.playback.sequence > 0
@@ -522,6 +525,12 @@ function mergeMusicState(savedMusic) {
         : 0,
     },
   }
+}
+
+function isSafeOverlayRuleKey(value) {
+  if (typeof value !== 'string') return false
+  if (!value.trim()) return false
+  return value !== '__proto__' && value !== 'constructor' && value !== 'prototype'
 }
 
 function uniqueNonEmptyStrings(values) {
@@ -541,8 +550,9 @@ function normalizeOverlayAlbumRule(rawRule) {
 }
 
 function getOverlayAlbumRule(overlayId) {
+  if (!isSafeOverlayRuleKey(overlayId)) return normalizeOverlayAlbumRule(null)
   if (!state.music.overlayAlbumRules || typeof state.music.overlayAlbumRules !== 'object') {
-    state.music.overlayAlbumRules = {}
+    state.music.overlayAlbumRules = Object.create(null)
   }
   if (!state.music.overlayAlbumRules[overlayId]) {
     state.music.overlayAlbumRules[overlayId] = normalizeOverlayAlbumRule(null)
@@ -554,9 +564,9 @@ function getOverlayAlbumRule(overlayId) {
 
 function compactOverlayAlbumRules() {
   if (!state.music.overlayAlbumRules || typeof state.music.overlayAlbumRules !== 'object') {
-    state.music.overlayAlbumRules = {}
+    state.music.overlayAlbumRules = Object.create(null)
   }
-  const allowedOverlayIds = new Set(state.overlays.map(overlay => overlay.id))
+  const allowedOverlayIds = new Set(state.overlays.map(overlay => overlay.id).filter(isSafeOverlayRuleKey))
   for (const overlayId of Object.keys(state.music.overlayAlbumRules)) {
     if (!allowedOverlayIds.has(overlayId)) delete state.music.overlayAlbumRules[overlayId]
   }
@@ -564,6 +574,7 @@ function compactOverlayAlbumRules() {
 }
 
 function patchOverlayAlbumRule(overlayId, nextRule) {
+  if (!isSafeOverlayRuleKey(overlayId)) return
   const normalized = normalizeOverlayAlbumRule(nextRule)
   const target = getOverlayAlbumRule(overlayId)
   target.whitelistAlbums = normalized.whitelistAlbums
@@ -610,13 +621,23 @@ function enforceActiveOverlayTrackRules(reason = 'rule update') {
   const allowedTracks = getAllowedTracksForOverlay(active.id)
   const currentPath = state.music?.song?.audioPath
   const currentAllowed = allowedTracks.some(track => track.audioPath === currentPath)
-  if (currentAllowed) return false
+  if (currentAllowed) {
+    if (state.music.rulePauseActive && active.nowPlayingPopup?.defaultPlayMusic) {
+      resumeMusic()
+      state.music.rulePauseActive = false
+      logMusicDebug('Resumed playback after overlay rule constraints were satisfied.')
+      return true
+    }
+    return false
+  }
   if (allowedTracks.length > 0) {
     setNowPlaying(allowedTracks[0])
+    state.music.rulePauseActive = false
     logMusicDebug(`Switched track due to active overlay music ${reason}.`)
     return true
   }
   pauseMusic()
+  state.music.rulePauseActive = true
   logMusicDebug(`No tracks satisfy active overlay music ${reason}; playback paused.`, 'warn')
   return false
 }
@@ -644,6 +665,7 @@ function applyActiveOverlayPlaybackDefault() {
   if (!active?.nowPlayingPopup) return
   if (active.nowPlayingPopup.defaultPlayMusic) resumeMusic()
   else pauseMusic()
+  state.music.rulePauseActive = false
 }
 
 function pauseMusic() {
@@ -966,6 +988,7 @@ app.post('/api/music/import', musicImportLimiter, (req, res) => {
 
 app.post('/api/music/pause', (req, res) => {
   pauseMusic()
+  state.music.rulePauseActive = false
   saveState()
   broadcast()
   res.json(getMusicSnapshot())
@@ -973,6 +996,7 @@ app.post('/api/music/pause', (req, res) => {
 
 app.post('/api/music/resume', (req, res) => {
   resumeMusic()
+  state.music.rulePauseActive = false
   saveState()
   broadcast()
   res.json(getMusicSnapshot())
