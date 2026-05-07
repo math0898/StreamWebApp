@@ -28,6 +28,8 @@ const IMPORT_RATE_LIMIT_WINDOW_MS = 60_000
 const IMPORT_RATE_LIMIT_MAX_REQUESTS = 8
 const AUDIO_EXTENSIONS = new Set(['.mp3', '.ogg', '.wav'])
 const IMAGE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.webp'])
+const AUDIO_MIME_TYPES = new Set(['audio/mpeg', 'audio/ogg', 'audio/wav', 'audio/x-wav'])
+const IMAGE_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp'])
 const DEFAULT_SONG = {
   title: 'Default Song',
   artist: 'Unknown Artist',
@@ -289,12 +291,9 @@ function sanitizeSegment(raw, fallback = 'Unknown') {
   const cleaned = value
     .replace(/[<>:"/\\|?*\u0000-\u001F]/g, '')
     .replace(/\s+/g, ' ')
+    .replace(/\.+$/g, '')
     .trim()
-  let withoutTrailingDots = cleaned
-  while (withoutTrailingDots.endsWith('.')) {
-    withoutTrailingDots = withoutTrailingDots.slice(0, -1).trimEnd()
-  }
-  return withoutTrailingDots || fallback
+  return cleaned || fallback
 }
 
 function toWebPath(absPath) {
@@ -329,7 +328,7 @@ function readMusicLibraryFromDisk() {
       if (!AUDIO_EXTENSIONS.has(audioExt)) continue
       const title = audioFile.name.slice(0, -audioExt.length) || 'Unknown Song'
       tracks.push({
-        id: `${folderName}::${audioFile.name}`,
+        id: `${encodeURIComponent(folderName)}::${encodeURIComponent(audioFile.name)}`,
         title,
         artist,
         album,
@@ -748,10 +747,10 @@ app.post('/api/music/import', musicImportLimiter, (req, res) => {
 
   const trackPayload = parseDataUrl(trackDataUrl)
   const coverPayload = parseDataUrl(coverDataUrl)
-  if (!trackPayload || !trackPayload.mime.startsWith('audio/')) {
+  if (!trackPayload || !AUDIO_MIME_TYPES.has(trackPayload.mime)) {
     return res.status(400).json({ error: 'Invalid track file payload' })
   }
-  if (!coverPayload || !coverPayload.mime.startsWith('image/')) {
+  if (!coverPayload || !IMAGE_MIME_TYPES.has(coverPayload.mime)) {
     return res.status(400).json({ error: 'Invalid cover image payload' })
   }
 
@@ -780,8 +779,13 @@ app.post('/api/music/import', musicImportLimiter, (req, res) => {
   const trackPath = join(albumDir, `${trackTitle}${trackExt}`)
   const coverPath = join(albumDir, `cover${coverExt}`)
 
-  writeFileSync(trackPath, trackPayload.buffer)
-  writeFileSync(coverPath, coverPayload.buffer)
+  try {
+    writeFileSync(trackPath, trackPayload.buffer)
+    writeFileSync(coverPath, coverPayload.buffer)
+  } catch (err) {
+    logMusicDebug(`Import file write failed for "${trackTitle}" by ${artist}.`, 'error')
+    return res.status(500).json({ error: 'Failed to write imported files' })
+  }
 
   reloadMusicLibrary()
   const importedTrack = state.music.library.find(track => track.audioPath === toWebPath(trackPath))

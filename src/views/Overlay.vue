@@ -234,7 +234,9 @@ function syncMusic(snapshot) {
   if (Number.isFinite(targetTime) && Math.abs((audio.currentTime || 0) - targetTime) > SYNC_TOLERANCE_SEC) {
     try {
       audio.currentTime = targetTime
-    } catch {}
+    } catch (err) {
+      console.warn('[overlay] Failed to sync audio currentTime.', err)
+    }
   }
 
   if (snapshot.status === 'paused') {
