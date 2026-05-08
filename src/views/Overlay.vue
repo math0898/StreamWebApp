@@ -87,6 +87,7 @@ let popupHideTimer = null
 let popupEndTimer = null
 let popupPeriodicTimer = null
 let source = null
+let skipInFlight = false
 
 function pct(count, maxVal) {
   if (maxVal <= 0) return '0%'
@@ -193,10 +194,11 @@ function showPopupFor(showDurationSec) {
 }
 
 function trackDurationSec(snapshot) {
+  const storedDuration = snapshot?.song?.durationSec
+  if (typeof storedDuration === 'number' && storedDuration > 0) return storedDuration
   const audio = audioRef.value
   if (audio && Number.isFinite(audio.duration) && audio.duration > 0) return audio.duration
-  const storedDuration = snapshot?.song?.durationSec
-  return typeof storedDuration === 'number' && storedDuration > 0 ? storedDuration : 0
+  return 0
 }
 
 function resetPopupTimers(snapshot) {
@@ -263,12 +265,23 @@ function syncMusic(snapshot) {
 
 function refreshMusicProgress() {
   const audio = audioRef.value
-  const duration = audio && Number.isFinite(audio.duration) && audio.duration > 0
-    ? audio.duration
-    : (music.value?.song?.durationSec ?? 0)
+  const duration = trackDurationSec(music.value)
   const current = audio && Number.isFinite(audio.currentTime) ? audio.currentTime : computeElapsedSec(music.value)
   const pctVal = duration > 0 ? Math.min(100, Math.max(0, (current / duration) * 100)) : 0
   musicProgressPct.value = pctVal
+}
+
+async function skipAfterTrackEnded() {
+  if (skipInFlight) return
+  if (music.value?.status !== 'playing') return
+  skipInFlight = true
+  try {
+    await fetch('/api/music/skip', { method: 'POST' })
+  } catch (err) {
+    console.warn('[overlay] Failed to advance to next track after audio ended.', err)
+  } finally {
+    skipInFlight = false
+  }
 }
 
 const shouldShowNowPlaying = computed(() => {
@@ -317,10 +330,12 @@ onMounted(() => {
   }
 
   progressTimer = setInterval(refreshMusicProgress, PROGRESS_UPDATE_INTERVAL_MS)
+  audioRef.value?.addEventListener('ended', skipAfterTrackEnded)
 })
 
 onUnmounted(() => {
   source?.close()
+  audioRef.value?.removeEventListener('ended', skipAfterTrackEnded)
   if (progressTimer) clearInterval(progressTimer)
   if (popupHideTimer) clearTimeout(popupHideTimer)
   if (popupEndTimer) clearTimeout(popupEndTimer)

@@ -487,7 +487,19 @@ function nextTrackFromLibrary(overlayId = state.activeId) {
 
 function reloadMusicLibrary() {
   const currentPath = state.music?.song?.audioPath
-  const tracks = readMusicLibraryFromDisk()
+  const existingDurations = new Map(
+    (Array.isArray(state.music?.library) ? state.music.library : [])
+      .map(track => [track?.audioPath, track?.durationSec]),
+  )
+  const tracks = readMusicLibraryFromDisk().map(track => {
+    const existingDuration = existingDurations.get(track.audioPath)
+    return {
+      ...track,
+      durationSec: typeof existingDuration === 'number' && existingDuration > 0
+        ? existingDuration
+        : track.durationSec,
+    }
+  })
   state.music.library = tracks.length > 0 ? tracks : [{
     id: 'default-song',
     ...DEFAULT_SONG,
@@ -1282,6 +1294,7 @@ app.post('/api/music/import', musicImportLimiter, (req, res) => {
   const coverDataUrl = req.body?.coverDataUrl
   const trackFileName = req.body?.trackFileName
   const coverFileName = req.body?.coverFileName
+  const trackDurationRaw = req.body?.trackDurationSec
 
   if (typeof artistRaw !== 'string' || !artistRaw.trim()) {
     return res.status(400).json({ error: 'Artist is required' })
@@ -1339,7 +1352,13 @@ app.post('/api/music/import', musicImportLimiter, (req, res) => {
 
   reloadMusicLibrary()
   const importedTrack = state.music.library.find(track => track.audioPath === toWebPath(trackPath))
-  if (importedTrack) setNowPlaying(importedTrack)
+  const importedDurationSec = typeof trackDurationRaw === 'number' && Number.isFinite(trackDurationRaw) && trackDurationRaw > 0
+    ? trackDurationRaw
+    : 0
+  if (importedTrack) {
+    if (importedDurationSec > 0) importedTrack.durationSec = importedDurationSec
+    setNowPlaying(importedTrack)
+  }
   else logMusicDebug('Warning: Imported track not found in reloaded library.', 'warn')
   logMusicDebug(`Imported track "${trackTitle}" from "${album}" by ${artist}.`)
   saveState()

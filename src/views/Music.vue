@@ -246,6 +246,7 @@ const savingAttributes = ref(false)
 const savingTrackId = ref('')
 const formMessage = ref('')
 const newAttributeName = ref('')
+let trackDurationProbeToken = 0
 
 // ── Client-side track preview ──────────────────────────────────────────────
 // A single shared Audio element is reused across all track previews.
@@ -286,6 +287,7 @@ const form = reactive({
   album: '',
   trackName: '',
   trackFile: null,
+  trackDurationSec: null,
   coverFile: null,
 })
 
@@ -409,9 +411,42 @@ async function resumeMusicPage() {
   }
 }
 
-function onTrackFileChange(event) {
+function probeAudioDuration(file) {
+  return new Promise((resolve) => {
+    const objectUrl = URL.createObjectURL(file)
+    const audio = new Audio()
+    let settled = false
+    const finish = (value) => {
+      if (settled) return
+      settled = true
+      audio.src = ''
+      URL.revokeObjectURL(objectUrl)
+      resolve(value)
+    }
+    const timer = setTimeout(() => finish(null), 8000)
+    audio.onloadedmetadata = () => {
+      clearTimeout(timer)
+      const duration = Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : null
+      finish(duration)
+    }
+    audio.onerror = () => {
+      clearTimeout(timer)
+      finish(null)
+    }
+    audio.preload = 'metadata'
+    audio.src = objectUrl
+  })
+}
+
+async function onTrackFileChange(event) {
   const file = event.target.files?.[0] ?? null
   form.trackFile = file
+  form.trackDurationSec = null
+  if (!file) return
+  const probeToken = ++trackDurationProbeToken
+  const duration = await probeAudioDuration(file)
+  if (probeToken !== trackDurationProbeToken) return
+  form.trackDurationSec = duration
 }
 
 function onCoverFileChange(event) {
@@ -445,6 +480,7 @@ async function importMusic() {
         album: form.album,
         trackName: form.trackName,
         trackFileName: form.trackFile.name,
+        trackDurationSec: form.trackDurationSec,
         coverFileName: form.coverFile.name,
         trackDataUrl,
         coverDataUrl,
@@ -456,6 +492,7 @@ async function importMusic() {
     formMessage.value = 'Track imported successfully.'
     form.trackName = ''
     form.trackFile = null
+    form.trackDurationSec = null
     if (trackFileInput.value) trackFileInput.value.value = ''
   } catch (err) {
     formMessage.value = `Import failed: ${err.message}`
