@@ -8,6 +8,7 @@ export default defineConfig({
     strictPort: true,
     proxy: {
       '/api': 'http://localhost:3302',
+      '/Music': 'http://localhost:3302',
     },
   },
   preview: {
