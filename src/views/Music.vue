@@ -72,6 +72,20 @@
               >{{ previewingTrackId === track.id ? '⏸' : '▶' }}</button>
               <button class="action-btn play-btn" @click="playTrack(track.id)">Set Now Playing</button>
             </div>
+            <label class="preview-seek-row">
+              <span class="muted small">
+                {{ formatPreviewTime(track.id) }} / {{ formatPreviewTime(previewDurationForTrack(track)) }}
+              </span>
+              <input
+                type="range"
+                min="0"
+                :max="previewSeekMax(track)"
+                step="0.1"
+                :value="previewPositionForTrack(track.id)"
+                :disabled="previewingTrackId !== track.id"
+                @input="seekPreview(track.id, Number($event.target.value))"
+              />
+            </label>
             <div class="attr-editor">
               <label class="attr-row">
                 <span>Liked ({{ trackDraftValue(track.id, likedAttributeId).toFixed(2) }})</span>
@@ -254,9 +268,26 @@ let trackDurationProbeToken = 0
 // the current one and starts the new one.
 let previewAudio = null
 const previewingTrackId = ref(null)
+const previewPositionSec = ref(0)
+const previewDurationSec = ref(0)
 
 function getOrCreateAudio() {
-  if (!previewAudio) previewAudio = new Audio()
+  if (!previewAudio) {
+    previewAudio = new Audio()
+    previewAudio.ontimeupdate = () => {
+      previewPositionSec.value = Number.isFinite(previewAudio.currentTime) ? previewAudio.currentTime : 0
+    }
+    previewAudio.onloadedmetadata = () => {
+      previewDurationSec.value = Number.isFinite(previewAudio.duration) && previewAudio.duration > 0
+        ? previewAudio.duration
+        : 0
+    }
+    previewAudio.ondurationchange = () => {
+      previewDurationSec.value = Number.isFinite(previewAudio.duration) && previewAudio.duration > 0
+        ? previewAudio.duration
+        : 0
+    }
+  }
   return previewAudio
 }
 
@@ -272,14 +303,53 @@ function previewTrack(track) {
     audio.pause()
     audio.src = track.audioPath
     audio.currentTime = 0
+    previewPositionSec.value = 0
+    previewDurationSec.value = Number.isFinite(track.trackDurationSec) && track.trackDurationSec > 0
+      ? track.trackDurationSec
+      : 0
   }
   previewingTrackId.value = track.id
   audio.play().catch(() => {
     // Browser may block autoplay; the user will need to click again.
     previewingTrackId.value = null
   })
-  audio.onended = () => { previewingTrackId.value = null }
+  audio.onended = () => {
+    previewingTrackId.value = null
+    previewPositionSec.value = 0
+  }
   audio.onerror = () => { previewingTrackId.value = null }
+}
+
+function previewDurationForTrack(track) {
+  if (previewingTrackId.value === track.id && previewDurationSec.value > 0) return previewDurationSec.value
+  return Number.isFinite(track.trackDurationSec) && track.trackDurationSec > 0 ? track.trackDurationSec : 0
+}
+
+function previewPositionForTrack(trackId) {
+  if (previewingTrackId.value === trackId) return previewPositionSec.value
+  return 0
+}
+
+function previewSeekMax(track) {
+  return Math.max(previewDurationForTrack(track), 0.1)
+}
+
+function seekPreview(trackId, value) {
+  if (previewingTrackId.value !== trackId) return
+  const audio = getOrCreateAudio()
+  const duration = Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : previewDurationSec.value
+  const max = Number.isFinite(duration) && duration > 0 ? duration : 0
+  const next = Math.max(0, Math.min(max, Number.isFinite(value) ? value : 0))
+  audio.currentTime = next
+  previewPositionSec.value = next
+}
+
+function formatPreviewTime(value) {
+  if (!Number.isFinite(value) || value <= 0) return '0:00'
+  const total = Math.floor(value)
+  const minutes = Math.floor(total / 60)
+  const seconds = total % 60
+  return `${minutes}:${seconds.toString().padStart(2, '0')}`
 }
 
 const form = reactive({
@@ -827,6 +897,16 @@ h1 {
   min-width: 2.2rem;
   text-align: center;
   flex-shrink: 0;
+}
+
+.preview-seek-row {
+  margin-top: 0.45rem;
+  display: grid;
+  gap: 0.2rem;
+}
+
+.preview-seek-row input {
+  width: 100%;
 }
 
 .playback-controls {
