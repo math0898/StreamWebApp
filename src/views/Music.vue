@@ -452,11 +452,8 @@ async function importMusic() {
     if (!res.ok) throw new Error(data?.error ?? 'Import failed')
     applyMusicSnapshot(data)
     formMessage.value = 'Track imported successfully.'
-    form.artist = ''
-    form.album = ''
     form.trackName = ''
     form.trackFile = null
-    form.coverFile = null
   } catch (err) {
     formMessage.value = `Import failed: ${err.message}`
   } finally {
