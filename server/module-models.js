@@ -4,7 +4,7 @@ export const DEFAULT_VALUE = { x: 0, y: 0, fontSize: 14 }
 export const DEFAULT_IMAGE_TRANSFORM = { x: 0, y: 0, scaleX: 1, scaleY: 1 }
 export const DEFAULT_TEXT_TRANSFORM = { x: 0, y: 0, scaleX: 1, scaleY: 1, fontSize: 32 }
 
-export const MODULE_TYPES = new Set(['progressBar', 'image', 'text'])
+export const MODULE_TYPES = new Set(['progressBar', 'image', 'text', 'dj'])
 
 export const FACTORY_MODULE_DEFAULTS = {
   progressBar: {
@@ -25,6 +25,15 @@ export const FACTORY_MODULE_DEFAULTS = {
     text: 'Sample text',
     color: '#ffffff',
     transform: { ...DEFAULT_TEXT_TRANSFORM },
+  },
+  dj: {
+    likedBonus: 1.0,
+    minRepeats: 0,
+    stylePenalty: 0.1,
+    variance: 0,
+    moodWindow: 5,
+    targetStyles: [],
+    targetAttributes: {},
   },
 }
 
@@ -178,9 +187,67 @@ class TextModule extends AbstractModule {
   }
 }
 
+class DJModule extends AbstractModule {
+  constructor(saved, newId) {
+    super(saved, newId, 'dj')
+    const d = FACTORY_MODULE_DEFAULTS.dj
+    this.name = typeof saved?.name === 'string' ? saved.name : ''
+    this.likedBonus = typeof saved?.likedBonus === 'number' && Number.isFinite(saved.likedBonus)
+      ? saved.likedBonus : d.likedBonus
+    this.minRepeats = typeof saved?.minRepeats === 'number' && saved.minRepeats >= 0
+      ? Math.floor(saved.minRepeats) : d.minRepeats
+    this.stylePenalty = typeof saved?.stylePenalty === 'number' && Number.isFinite(saved.stylePenalty)
+      ? saved.stylePenalty : d.stylePenalty
+    this.variance = typeof saved?.variance === 'number' && Number.isFinite(saved.variance) && saved.variance >= 0
+      ? saved.variance : d.variance
+    this.moodWindow = typeof saved?.moodWindow === 'number' && saved.moodWindow >= 1
+      ? Math.floor(saved.moodWindow) : d.moodWindow
+    this.targetStyles = []
+    this.targetAttributes = {}
+    this.patch(saved ?? {})
+  }
+
+  patch(patch) {
+    this.patchShared(patch)
+    if (typeof patch?.name === 'string') this.name = patch.name
+    if (typeof patch?.likedBonus === 'number' && Number.isFinite(patch.likedBonus)) this.likedBonus = patch.likedBonus
+    if (typeof patch?.minRepeats === 'number' && patch.minRepeats >= 0) this.minRepeats = Math.floor(patch.minRepeats)
+    if (typeof patch?.stylePenalty === 'number' && Number.isFinite(patch.stylePenalty)) this.stylePenalty = patch.stylePenalty
+    if (typeof patch?.variance === 'number' && Number.isFinite(patch.variance) && patch.variance >= 0) this.variance = patch.variance
+    if (typeof patch?.moodWindow === 'number' && patch.moodWindow >= 1) this.moodWindow = Math.floor(patch.moodWindow)
+    if (Array.isArray(patch?.targetStyles)) {
+      this.targetStyles = [...new Set(patch.targetStyles.filter(s => typeof s === 'string' && s.trim()))]
+    }
+    if (patch?.targetAttributes && typeof patch.targetAttributes === 'object' && !Array.isArray(patch.targetAttributes)) {
+      for (const [k, v] of Object.entries(patch.targetAttributes)) {
+        if (typeof v === 'number' && Number.isFinite(v)) {
+          this.targetAttributes[k] = Math.max(0, Math.min(1, v))
+        }
+      }
+    }
+  }
+
+  toObject() {
+    return {
+      id: this.id,
+      type: this.type,
+      hidden: this.hidden,
+      name: this.name,
+      likedBonus: this.likedBonus,
+      minRepeats: this.minRepeats,
+      stylePenalty: this.stylePenalty,
+      variance: this.variance,
+      moodWindow: this.moodWindow,
+      targetStyles: [...this.targetStyles],
+      targetAttributes: { ...this.targetAttributes },
+    }
+  }
+}
+
 function moduleClassFor(type) {
   if (type === 'image') return ImageModule
   if (type === 'text') return TextModule
+  if (type === 'dj') return DJModule
   return ProgressBarModule
 }
 
@@ -213,6 +280,21 @@ export function newModule(type, moduleDefaults, newId) {
       text: d.text,
       color: d.color,
       transform: { ...DEFAULT_TEXT_TRANSFORM, ...d.transform },
+    }, newId).toObject()
+  }
+
+  if (actualType === 'dj') {
+    const d = FACTORY_MODULE_DEFAULTS.dj
+    return new DJModule({
+      hidden: true,
+      name: '',
+      likedBonus: d.likedBonus,
+      minRepeats: d.minRepeats,
+      stylePenalty: d.stylePenalty,
+      variance: d.variance,
+      moodWindow: d.moodWindow,
+      targetStyles: [],
+      targetAttributes: {},
     }, newId).toObject()
   }
 

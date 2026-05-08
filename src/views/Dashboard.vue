@@ -43,6 +43,160 @@
       </div>
     </div>
 
+    <div class="music-panel">
+      <div class="music-header-row">
+        <h2>Background Music</h2>
+        <div class="music-header-actions">
+          <span class="music-status" :class="music?.status === 'paused' ? 'music-paused' : 'music-playing'">
+            {{ music?.status === 'paused' ? 'Paused' : 'Playing' }}
+          </span>
+          <button
+            class="action-btn"
+            :class="{ 'action-edit-active': musicEditOpen }"
+            @click="musicEditOpen = !musicEditOpen"
+          >{{ musicEditOpen ? 'Done' : 'Edit' }}</button>
+        </div>
+      </div>
+
+      <div class="music-now-playing">
+        <p class="music-line"><strong>Now Playing:</strong> {{ music?.song?.title ?? 'Unknown Song' }}</p>
+        <p class="music-line"><strong>Artist:</strong> {{ music?.song?.artist ?? 'Unknown Artist' }}</p>
+        <p class="music-line"><strong>Album:</strong> {{ music?.song?.album ?? 'Unknown Album' }}</p>
+      </div>
+
+      <div class="music-controls">
+        <button class="action-btn" :disabled="!canPause" @click="pauseMusic">Pause</button>
+        <button class="action-btn" :disabled="!canResume" @click="resumeMusic">Resume</button>
+        <button class="action-btn action-activate" @click="skipMusic">Skip Song</button>
+      </div>
+
+      <p class="music-help">
+        Place songs and album art in
+        <code>public/Music/Album Name - Artist/</code>
+        (use <code>cover.jpg</code> plus <code>.mp3/.ogg/.wav</code> files) so the app can load them as <code>/Music/...</code> assets.
+      </p>
+
+      <div v-if="musicEditOpen" class="edit-panel music-edit-panel">
+        <div class="edit-row">
+          <label class="edit-label">Popup X Offset</label>
+          <input
+            type="number"
+            :value="popupSettings.x"
+            @change="patchPopupSettings({ x: $event.target.valueAsNumber })"
+          />
+        </div>
+        <div class="edit-row">
+          <label class="edit-label">Popup Y Offset</label>
+          <input
+            type="number"
+            :value="popupSettings.y"
+            @change="patchPopupSettings({ y: $event.target.valueAsNumber })"
+          />
+        </div>
+        <div class="edit-row checkbox-row">
+          <label class="edit-label">Default Play Music</label>
+          <input
+            type="checkbox"
+            :checked="popupSettings.defaultPlayMusic"
+            @change="patchPopupSettings({ defaultPlayMusic: $event.target.checked })"
+          />
+        </div>
+        <div class="edit-row checkbox-row">
+          <label class="edit-label">Hide Popup Visual</label>
+          <input
+            type="checkbox"
+            :checked="popupSettings.hiddenVisual"
+            @change="patchPopupSettings({ hiddenVisual: $event.target.checked })"
+          />
+        </div>
+        <p class="edit-sub">Popup Animation</p>
+        <div class="edit-row">
+          <label class="edit-label">Song Start Show (sec)</label>
+          <input
+            type="number"
+            min="0"
+            step="0.1"
+            :value="popupSettings.animation.songStartShowSec"
+            @change="patchPopupSettings({ animation: { songStartShowSec: $event.target.valueAsNumber } })"
+          />
+        </div>
+        <div class="edit-row">
+          <label class="edit-label">Song End Show (sec)</label>
+          <input
+            type="number"
+            min="0"
+            step="0.1"
+            :value="popupSettings.animation.songEndShowSec"
+            @change="patchPopupSettings({ animation: { songEndShowSec: $event.target.valueAsNumber } })"
+          />
+        </div>
+        <div class="edit-row">
+          <label class="edit-label">Periodic Interval (sec)</label>
+          <input
+            type="number"
+            min="0"
+            step="1"
+            :value="popupSettings.animation.periodicIntervalSec"
+            @change="patchPopupSettings({ animation: { periodicIntervalSec: $event.target.valueAsNumber } })"
+          />
+        </div>
+        <div class="edit-row">
+          <label class="edit-label">Periodic Show (sec)</label>
+          <input
+            type="number"
+            min="0"
+            step="0.1"
+            :value="popupSettings.animation.periodicShowSec"
+            @change="patchPopupSettings({ animation: { periodicShowSec: $event.target.valueAsNumber } })"
+          />
+        </div>
+        <div class="edit-row">
+          <label class="edit-label">Fade + Motion Duration (sec)</label>
+          <input
+            type="number"
+            min="0"
+            step="0.05"
+            :value="popupSettings.animation.transitionDurationSec"
+            @change="patchPopupSettings({ animation: { transitionDurationSec: $event.target.valueAsNumber } })"
+          />
+        </div>
+        <div class="edit-row">
+          <label class="edit-label">Motion Direction</label>
+          <select
+            :value="popupSettings.animation.motionDirection"
+            @change="patchPopupSettings({ animation: { motionDirection: $event.target.value } })"
+          >
+            <option value="none">None (fade only)</option>
+            <option value="up">Vertical Up</option>
+            <option value="down">Vertical Down</option>
+            <option value="left">Horizontal Left</option>
+            <option value="right">Horizontal Right</option>
+          </select>
+        </div>
+        <div class="edit-row">
+          <label class="edit-label">Motion Distance (px)</label>
+          <input
+            type="number"
+            min="0"
+            step="1"
+            :value="popupSettings.animation.motionDistancePx"
+            @change="patchPopupSettings({ animation: { motionDistancePx: $event.target.valueAsNumber } })"
+          />
+        </div>
+        <div class="edit-row">
+          <label class="edit-label">Motion Interpolation</label>
+          <select
+            :value="popupSettings.animation.motionInterpolation"
+            @change="patchPopupSettings({ animation: { motionInterpolation: $event.target.value } })"
+          >
+            <option value="linear">Linear</option>
+            <option value="quadratic">Quadratic</option>
+            <option value="exponential">Exponential</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
     <div class="module-grid">
       <div v-for="mod in modules" :key="mod.id" class="module-card" :class="{ 'mod-is-hidden': mod.hidden }">
 
@@ -161,6 +315,56 @@
             </div>
           </template>
 
+          <template v-else-if="mod.type === 'dj'">
+            <div class="edit-row">
+              <label class="edit-label">Name</label>
+              <input type="text" class="wide-input" placeholder="DJ Module" :value="mod.name" @change="patchMod(mod.id, { name: $event.target.value })" />
+            </div>
+            <div class="edit-row">
+              <label class="edit-label">Liked Bonus</label>
+              <input type="number" step="0.1" min="0" :value="mod.likedBonus" @change="patchMod(mod.id, { likedBonus: $event.target.valueAsNumber })" />
+            </div>
+            <div class="edit-row">
+              <label class="edit-label">Min Repeats</label>
+              <input type="number" step="1" min="0" :value="mod.minRepeats" @change="patchMod(mod.id, { minRepeats: $event.target.valueAsNumber })" />
+            </div>
+            <div class="edit-row">
+              <label class="edit-label">Style Penalty</label>
+              <input type="number" step="0.01" min="0" :value="mod.stylePenalty" @change="patchMod(mod.id, { stylePenalty: $event.target.valueAsNumber })" />
+            </div>
+            <div class="edit-row">
+              <label class="edit-label">Variance</label>
+              <input type="number" step="0.01" min="0" :value="mod.variance ?? 0" @change="patchMod(mod.id, { variance: $event.target.valueAsNumber })" />
+            </div>
+            <div class="edit-row">
+              <label class="edit-label">Mood Window</label>
+              <input type="number" step="1" min="1" :value="mod.moodWindow" @change="patchMod(mod.id, { moodWindow: $event.target.valueAsNumber })" />
+            </div>
+            <p class="edit-sub">Target Styles</p>
+            <p v-if="!(music?.styleOptions?.length)" class="edit-note">No styles loaded. Reload the music library.</p>
+            <div v-for="style in (music?.styleOptions ?? [])" :key="mod.id+'-style-'+style" class="edit-row checkbox-row">
+              <label class="edit-label">{{ style }}</label>
+              <input
+                type="checkbox"
+                :checked="mod.targetStyles?.includes(style)"
+                @change="patchDjStyles(mod, style, $event.target.checked)"
+              />
+            </div>
+            <p class="edit-sub">Target Attributes</p>
+            <p v-if="!customDjAttributes.length" class="edit-note">No custom attributes defined. Add them in /music.</p>
+            <div v-for="definition in customDjAttributes" :key="mod.id+'-attr-'+definition.id" class="edit-row">
+              <label class="edit-label">{{ definition.name }} ({{ ((mod.targetAttributes?.[definition.id]) ?? 0.5).toFixed(2) }})</label>
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.01"
+                :value="(mod.targetAttributes?.[definition.id]) ?? 0.5"
+                @change="patchMod(mod.id, { targetAttributes: { ...mod.targetAttributes, [definition.id]: $event.target.valueAsNumber } })"
+              />
+            </div>
+          </template>
+
         </div>
       </div>
     </div>
@@ -170,6 +374,7 @@
         <option value="progressBar">ProgressBar</option>
         <option value="image">Image</option>
         <option value="text">Text</option>
+        <option value="dj">DJ</option>
       </select>
       <button class="add-module-btn" @click="addModule">+ Add Module</button>
     </div>
@@ -179,7 +384,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, nextTick } from 'vue'
+import { ref, reactive, onMounted, nextTick, computed } from 'vue'
 
 const overlayList    = ref([])
 const activeId       = ref('')
@@ -192,6 +397,26 @@ const modules = ref([])
 const steps   = reactive({})
 const setVals = reactive({})
 const editOpen = reactive({})
+const music = ref(null)
+const musicEditOpen = ref(false)
+const canPause = computed(() => !!music.value && music.value.status !== 'paused')
+const canResume = computed(() => !!music.value && music.value.status === 'paused')
+const popupSettings = reactive({
+  x: 0,
+  y: 0,
+  hiddenVisual: false,
+  defaultPlayMusic: true,
+  animation: {
+    songStartShowSec: 6,
+    songEndShowSec: 3,
+    periodicIntervalSec: 45,
+    periodicShowSec: 4,
+    transitionDurationSec: 0.35,
+    motionDirection: 'down',
+    motionDistancePx: 14,
+    motionInterpolation: 'linear',
+  },
+})
 
 const newModuleType = ref('progressBar')
 
@@ -225,9 +450,14 @@ const textTransformFields = [
   { key: 'fontSize', label: 'Font Size', step: 1 },
 ]
 
+const customDjAttributes = computed(() =>
+  (music.value?.attributeDefinitions ?? []).filter(d => d.type === 'custom')
+)
+
 function moduleTitle(mod) {
   if (mod.type === 'image') return mod.name?.trim() || 'Image Module'
   if (mod.type === 'text') return mod.name?.trim() || 'Text Module'
+  if (mod.type === 'dj') return mod.name?.trim() || 'DJ Module'
   return mod.label || 'ProgressBar Module'
 }
 
@@ -254,10 +484,26 @@ function applyModules(newModules) {
   }
 }
 
+function applyPopupSettings(nextSettings) {
+  popupSettings.x = nextSettings?.x ?? 0
+  popupSettings.y = nextSettings?.y ?? 0
+  popupSettings.hiddenVisual = !!nextSettings?.hiddenVisual
+  popupSettings.defaultPlayMusic = typeof nextSettings?.defaultPlayMusic === 'boolean' ? nextSettings.defaultPlayMusic : true
+  popupSettings.animation.songStartShowSec = nextSettings?.animation?.songStartShowSec ?? 6
+  popupSettings.animation.songEndShowSec = nextSettings?.animation?.songEndShowSec ?? 3
+  popupSettings.animation.periodicIntervalSec = nextSettings?.animation?.periodicIntervalSec ?? 45
+  popupSettings.animation.periodicShowSec = nextSettings?.animation?.periodicShowSec ?? 4
+  popupSettings.animation.transitionDurationSec = nextSettings?.animation?.transitionDurationSec ?? 0.35
+  popupSettings.animation.motionDirection = nextSettings?.animation?.motionDirection ?? 'down'
+  popupSettings.animation.motionDistancePx = nextSettings?.animation?.motionDistancePx ?? 14
+  popupSettings.animation.motionInterpolation = nextSettings?.animation?.motionInterpolation ?? 'linear'
+}
+
 async function fetchOverlayState(id) {
   const res  = await fetch(`/api/state?id=${encodeURIComponent(id)}`)
   const data = await res.json()
   applyModules(data.modules ?? [])
+  applyPopupSettings(data.nowPlayingPopup ?? {})
 }
 
 async function fetchOverlayList() {
@@ -273,10 +519,16 @@ onMounted(async () => {
     const { activeId: aid } = await fetchOverlayList()
     editingId.value = aid
     await fetchOverlayState(aid)
+    await fetchMusicState()
   } catch (err) {
     console.warn('[dashboard] Failed to load initial state:', err)
   }
 })
+
+async function fetchMusicState() {
+  const res = await fetch('/api/music')
+  music.value = await res.json()
+}
 
 async function selectOverlay(id) {
   if (editingId.value === id) return
@@ -333,7 +585,10 @@ async function submitRename() {
     })
     const data = await res.json()
     const ov = overlayList.value.find(o => o.id === editingId.value)
-    if (ov) ov.name = data.name
+    if (ov) {
+      ov.name = data.name
+      ov.nowPlayingPopup = data.nowPlayingPopup
+    }
     renaming.value = false
   } catch (err) {
     console.warn('[dashboard] Failed to rename overlay:', err)
@@ -409,6 +664,41 @@ async function removeModule(moduleId) {
   }
 }
 
+function patchDjStyles(mod, style, checked) {
+  const current = Array.isArray(mod.targetStyles) ? [...mod.targetStyles] : []
+  const next = checked
+    ? [...new Set([...current, style])]
+    : current.filter(s => s !== style)
+  patchMod(mod.id, { targetStyles: next })
+}
+
+async function pauseMusic() {
+  try {
+    const res = await fetch('/api/music/pause', { method: 'POST' })
+    music.value = await res.json()
+  } catch (err) {
+    console.warn('[dashboard] Failed to pause music:', err)
+  }
+}
+
+async function resumeMusic() {
+  try {
+    const res = await fetch('/api/music/resume', { method: 'POST' })
+    music.value = await res.json()
+  } catch (err) {
+    console.warn('[dashboard] Failed to resume music:', err)
+  }
+}
+
+async function skipMusic() {
+  try {
+    const res = await fetch('/api/music/skip', { method: 'POST' })
+    music.value = await res.json()
+  } catch (err) {
+    console.warn('[dashboard] Failed to skip song:', err)
+  }
+}
+
 function adjustCount(mod, direction) {
   const step = steps[mod.id] ?? 1
   patchMod(mod.id, { count: mod.count + direction * step })
@@ -429,6 +719,59 @@ function setStepLocal(modId, raw) {
 
 function updateSetVal(modId, val) {
   setVals[modId] = val
+}
+
+async function patchPopupSettings(patch) {
+  if (typeof patch.x === 'number' && Number.isFinite(patch.x)) popupSettings.x = patch.x
+  if (typeof patch.y === 'number' && Number.isFinite(patch.y)) popupSettings.y = patch.y
+  if (typeof patch.hiddenVisual === 'boolean') popupSettings.hiddenVisual = patch.hiddenVisual
+  if (typeof patch.defaultPlayMusic === 'boolean') popupSettings.defaultPlayMusic = patch.defaultPlayMusic
+  if (patch.animation && typeof patch.animation === 'object') {
+    if (typeof patch.animation.songStartShowSec === 'number' && Number.isFinite(patch.animation.songStartShowSec)) {
+      popupSettings.animation.songStartShowSec = patch.animation.songStartShowSec
+    }
+    if (typeof patch.animation.songEndShowSec === 'number' && Number.isFinite(patch.animation.songEndShowSec)) {
+      popupSettings.animation.songEndShowSec = patch.animation.songEndShowSec
+    }
+    if (typeof patch.animation.periodicIntervalSec === 'number' && Number.isFinite(patch.animation.periodicIntervalSec)) {
+      popupSettings.animation.periodicIntervalSec = patch.animation.periodicIntervalSec
+    }
+    if (typeof patch.animation.periodicShowSec === 'number' && Number.isFinite(patch.animation.periodicShowSec)) {
+      popupSettings.animation.periodicShowSec = patch.animation.periodicShowSec
+    }
+    if (typeof patch.animation.transitionDurationSec === 'number' && Number.isFinite(patch.animation.transitionDurationSec)) {
+      popupSettings.animation.transitionDurationSec = patch.animation.transitionDurationSec
+    }
+    if (typeof patch.animation.motionDirection === 'string') {
+      popupSettings.animation.motionDirection = patch.animation.motionDirection
+    }
+    if (typeof patch.animation.motionDistancePx === 'number' && Number.isFinite(patch.animation.motionDistancePx)) {
+      popupSettings.animation.motionDistancePx = patch.animation.motionDistancePx
+    }
+    if (typeof patch.animation.motionInterpolation === 'string') {
+      popupSettings.animation.motionInterpolation = patch.animation.motionInterpolation
+    }
+  }
+
+  try {
+    const res = await fetch(`/api/overlays/${encodeURIComponent(editingId.value)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ nowPlayingPopup: patch }),
+    })
+    const data = await res.json()
+    applyPopupSettings(data.nowPlayingPopup ?? {})
+    const ov = overlayList.value.find(o => o.id === editingId.value)
+    if (ov) ov.nowPlayingPopup = data.nowPlayingPopup
+    if (typeof patch.defaultPlayMusic === 'boolean') {
+      await fetchMusicState()
+    }
+  } catch (err) {
+    console.warn('[dashboard] Failed to patch popup settings:', err)
+    try { await fetchOverlayState(editingId.value) } catch (refreshErr) {
+      console.warn('[dashboard] Failed to refresh overlay state after popup settings patch failure:', refreshErr)
+    }
+  }
 }
 </script>
 
@@ -521,6 +864,95 @@ h1 {
   align-items: center;
   gap: 0.4rem;
   padding: 0.4rem 0 0;
+}
+
+.music-panel {
+  width: 100%;
+  max-width: 720px;
+  margin-bottom: 1.2rem;
+  border: 1px solid #2a2a2a;
+  border-radius: 10px;
+  padding: 0.8rem 0.9rem;
+  background: #151515;
+}
+
+.music-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  margin-bottom: 0.5rem;
+}
+
+.music-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.music-header-row h2 {
+  margin: 0;
+  font-size: 1rem;
+  color: #e0e0e0;
+}
+
+.music-status {
+  font-size: 0.72rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid transparent;
+}
+
+.music-playing {
+  color: #66bb6a;
+  border-color: #2e5c30;
+  background: #132014;
+}
+
+.music-paused {
+  color: #ffd54f;
+  border-color: #5c4a1a;
+  background: #231f10;
+}
+
+.music-now-playing {
+  margin-bottom: 0.55rem;
+}
+
+.music-line {
+  margin: 0.1rem 0;
+  font-size: 0.85rem;
+  color: #bdbdbd;
+}
+
+.music-controls {
+  display: flex;
+  gap: 0.45rem;
+  margin-bottom: 0.55rem;
+}
+
+.music-controls .action-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.music-help {
+  margin: 0;
+  color: #9e9e9e;
+  font-size: 0.75rem;
+  line-height: 1.45;
+}
+
+.music-help code {
+  color: #82b1ff;
+}
+
+.music-edit-panel {
+  margin-top: 0.75rem;
+}
+
+.checkbox-row {
+  grid-template-columns: 1fr auto;
 }
 
 .rename-input {
@@ -722,6 +1154,13 @@ h1 {
   transition: background 0.15s;
 }
 .reset-sm:hover { background: #1a1a1a; }
+
+.edit-note {
+  font-size: 0.75rem;
+  color: #616161;
+  margin: 0 0 0.4rem;
+  font-style: italic;
+}
 
 /* ── Add module row ──────────────────────────────────── */
 .add-module-row {
