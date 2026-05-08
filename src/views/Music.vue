@@ -74,7 +74,7 @@
             </div>
             <label class="preview-seek-row">
               <span class="muted small">
-                {{ formatPreviewTime(track.id) }} / {{ formatPreviewTime(previewDurationForTrack(track)) }}
+                {{ formatPreviewTime(previewPositionForTrack(track.id)) }} / {{ formatPreviewTime(previewDurationForTrack(track)) }}
               </span>
               <input
                 type="range"
