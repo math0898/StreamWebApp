@@ -39,7 +39,7 @@
 
         <label class="field">
           <span>Track File (.mp3/.ogg/.wav)</span>
-          <input type="file" accept=".mp3,.ogg,.wav,audio/*" @change="onTrackFileChange" required />
+          <input ref="trackFileInput" type="file" accept=".mp3,.ogg,.wav,audio/*" @change="onTrackFileChange" required />
         </label>
 
         <label class="field">
@@ -221,6 +221,8 @@
 
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
+
+const trackFileInput = ref(null)
 
 const music = reactive({
   song: null,
@@ -454,6 +456,7 @@ async function importMusic() {
     formMessage.value = 'Track imported successfully.'
     form.trackName = ''
     form.trackFile = null
+    if (trackFileInput.value) trackFileInput.value.value = ''
   } catch (err) {
     formMessage.value = `Import failed: ${err.message}`
   } finally {
