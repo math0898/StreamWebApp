@@ -340,8 +340,12 @@ function seekPreview(trackId, value) {
   const duration = Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : previewDurationSec.value
   const max = Number.isFinite(duration) && duration > 0 ? duration : 0
   const next = Math.max(0, Math.min(max, Number.isFinite(value) ? value : 0))
-  audio.currentTime = next
-  previewPositionSec.value = next
+  try {
+    audio.currentTime = next
+    previewPositionSec.value = Number.isFinite(audio.currentTime) ? audio.currentTime : next
+  } catch {
+    previewPositionSec.value = Number.isFinite(audio.currentTime) ? audio.currentTime : 0
+  }
 }
 
 function formatPreviewTime(value) {
