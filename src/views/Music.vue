@@ -225,6 +225,184 @@
     </section>
 
     <section class="panel">
+      <div class="panel-header">
+        <h2>DJ Simulator</h2>
+        <button class="action-btn" @click="runDjSimulation" :disabled="simLoading">
+          {{ simLoading ? 'Running…' : 'Run Simulation' }}
+        </button>
+      </div>
+      <p v-if="!simResult && !simLoading" class="muted small">Click "Run Simulation" to analyse the DJ selection algorithm against the current library.</p>
+      <p v-if="simError" class="muted">{{ simError }}</p>
+
+      <div v-if="simResult">
+        <!-- ── Mood vs Target ─────────────────────────────────────────── -->
+        <div class="sim-block">
+          <p class="sim-block-title">Current Mood vs Target</p>
+          <p v-if="!simResult.hasDj" class="muted small">No DJ module is active on the current overlay. Add a DJ module on the Dashboard to enable the scoring algorithm.</p>
+          <p v-if="simResult.customAttrIds.length === 0" class="muted small">No custom attributes defined. Add attributes to use the DJ scoring algorithm.</p>
+          <table v-else class="sim-table">
+            <thead>
+              <tr>
+                <th>Attribute</th>
+                <th>Current Mood</th>
+                <th>Target</th>
+                <th class="sim-override-col">Override Target</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="attrId in simResult.customAttrIds" :key="attrId">
+                <td>{{ simAttrName(attrId) }}</td>
+                <td>{{ fmtN(simResult.moodVector[attrId] ?? 0.5) }}</td>
+                <td>{{ fmtN(simResult.effectiveTargetAttributes[attrId] ?? 0.5) }}</td>
+                <td class="sim-override-col">
+                  <div class="sim-slider-row">
+                    <input
+                      type="range" min="0" max="1" step="0.01"
+                      :value="simOverrides[attrId] ?? simResult.effectiveTargetAttributes[attrId] ?? 0.5"
+                      @input="simOverrides[attrId] = Number($event.target.value)"
+                    />
+                    <span>{{ fmtN(simOverrides[attrId] ?? simResult.effectiveTargetAttributes[attrId] ?? 0.5) }}</span>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+          <div v-if="simResult.customAttrIds.length > 0" class="playback-controls">
+            <button class="action-btn" @click="runDjSimulation" :disabled="simLoading">Re-run with Overrides</button>
+            <button class="action-btn" @click="resetSimOverrides">Reset</button>
+          </div>
+          <p class="muted small" style="margin-top:0.4rem;">
+            Mood window: last {{ simResult.djConfig.moodWindow }} tracks ·
+            Liked bonus: {{ simResult.djConfig.likedBonus }} ·
+            Style penalty: {{ simResult.djConfig.stylePenalty }} ·
+            Variance: {{ simResult.djConfig.variance }}
+          </p>
+        </div>
+
+        <!-- ── Candidate Scores ───────────────────────────────────────── -->
+        <div class="sim-block">
+          <p class="sim-block-title">Candidate Scores — {{ simResult.candidates.length }} track(s), sorted by final score (lower = more likely to be selected)</p>
+          <p class="muted small">DistA = mood distance + style penalty A + liked adj. · DistB = target distance + style penalty B · Score = (DistA + DistB) / 2</p>
+          <div class="sim-table-scroll">
+            <table class="sim-table">
+              <thead>
+                <tr>
+                  <th>Title</th>
+                  <th>Artist</th>
+                  <th v-for="attrId in simResult.customAttrIds" :key="`m-${attrId}`" class="sim-num">Δ{{ simAttrName(attrId) }}</th>
+                  <th class="sim-num">Style A</th>
+                  <th class="sim-num">Liked Adj</th>
+                  <th class="sim-num">DistA</th>
+                  <th v-for="attrId in simResult.customAttrIds" :key="`t-${attrId}`" class="sim-num">Δ{{ simAttrName(attrId) }}(tgt)</th>
+                  <th class="sim-num">Style B</th>
+                  <th class="sim-num">DistB</th>
+                  <th class="sim-num sim-score-col">Score</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr
+                  v-for="c in simResult.candidates"
+                  :key="c.id"
+                  :class="{ 'sim-current-row': c.isCurrentTrack }"
+                >
+                  <td class="sim-title">{{ c.title }}</td>
+                  <td class="sim-artist">{{ c.artist }}</td>
+                  <td v-for="attrId in simResult.customAttrIds" :key="`m-${attrId}`" class="sim-num">{{ fmtN(c.moodAttrDistances[attrId] ?? 0) }}</td>
+                  <td class="sim-num">{{ fmtN(c.stylePenaltyA) }}</td>
+                  <td class="sim-num">{{ fmtN(c.likedAdjustment) }}</td>
+                  <td class="sim-num sim-dist-a">{{ fmtN(c.distanceA) }}</td>
+                  <td v-for="attrId in simResult.customAttrIds" :key="`t-${attrId}`" class="sim-num">{{ fmtN(c.targetAttrDistances[attrId] ?? 0) }}</td>
+                  <td class="sim-num">{{ fmtN(c.stylePenaltyB) }}</td>
+                  <td class="sim-num sim-dist-b">{{ fmtN(c.distanceB) }}</td>
+                  <td class="sim-num sim-score-col">{{ fmtN(c.finalScore) }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- ── Recently Played Graph ──────────────────────────────────── -->
+        <div class="sim-block">
+          <p class="sim-block-title">Recently Played Graph — {{ simResult.recentlyPlayedTracks.length }} track(s)</p>
+          <p v-if="simResult.recentlyPlayedTracks.length === 0" class="muted small">No recently played history. Play some tracks first.</p>
+          <p v-if="simResult.customAttrIds.length >= 2" class="muted small">
+            X axis: {{ simAttrName(simResult.customAttrIds[0]) }} · Y axis: {{ simAttrName(simResult.customAttrIds[1]) }}
+          </p>
+          <p v-else-if="simResult.customAttrIds.length === 1" class="muted small">
+            X axis: {{ simAttrName(simResult.customAttrIds[0]) }} · Y axis: play order
+          </p>
+          <p v-else class="muted small">No custom attributes — tracks laid out by play order.</p>
+
+          <svg
+            v-if="simResult.recentlyPlayedTracks.length > 0"
+            class="sim-graph"
+            viewBox="0 0 620 320"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <!-- axis lines -->
+            <line x1="58" y1="10" x2="58" y2="268" stroke="#333" stroke-width="1"/>
+            <line x1="58" y1="268" x2="610" y2="268" stroke="#333" stroke-width="1"/>
+            <!-- axis tick labels -->
+            <text x="58" y="282" fill="#666" font-size="10" text-anchor="middle">0</text>
+            <text x="610" y="282" fill="#666" font-size="10" text-anchor="middle">1</text>
+            <text x="46" y="272" fill="#666" font-size="10" text-anchor="end">0</text>
+            <text x="46" y="14" fill="#666" font-size="10" text-anchor="end">1</text>
+
+            <!-- edges: connect consecutive plays -->
+            <line
+              v-for="(edge, idx) in simGraphEdges"
+              :key="`e-${idx}`"
+              :x1="edge.x1" :y1="edge.y1" :x2="edge.x2" :y2="edge.y2"
+              stroke="#3a3a3a" stroke-width="1.5"
+            />
+
+            <!-- nodes -->
+            <g v-for="(node, idx) in simGraphNodes" :key="`n-${idx}`">
+              <circle
+                :cx="node.x" :cy="node.y" r="7"
+                :fill="node.isNewest ? '#82b1ff' : '#2a2a2a'"
+                :stroke="node.isOldest ? '#555' : '#82b1ff'"
+                stroke-width="1.5"
+              />
+              <text
+                :x="node.x" :y="node.y - 10"
+                fill="#bdbdbd" font-size="8" text-anchor="middle"
+              >{{ node.label }}</text>
+              <title>{{ node.title }} — {{ node.artist }}</title>
+            </g>
+
+            <!-- current mood marker (diamond) -->
+            <g v-if="simGraphMood">
+              <polygon
+                :points="simGraphMood.points"
+                fill="#ffd54f" stroke="#ffd54f" stroke-width="1" opacity="0.9"
+              />
+              <text :x="simGraphMood.x" :y="simGraphMood.y - 12" fill="#ffd54f" font-size="8" text-anchor="middle">mood</text>
+            </g>
+
+            <!-- target marker (cross/×) -->
+            <g v-if="simGraphTarget">
+              <line :x1="simGraphTarget.x - 6" :y1="simGraphTarget.y - 6" :x2="simGraphTarget.x + 6" :y2="simGraphTarget.y + 6" stroke="#ef5350" stroke-width="2"/>
+              <line :x1="simGraphTarget.x + 6" :y1="simGraphTarget.y - 6" :x2="simGraphTarget.x - 6" :y2="simGraphTarget.y + 6" stroke="#ef5350" stroke-width="2"/>
+              <text :x="simGraphTarget.x" :y="simGraphTarget.y - 10" fill="#ef5350" font-size="8" text-anchor="middle">target</text>
+            </g>
+
+            <!-- legend -->
+            <circle cx="70" cy="305" r="5" fill="#82b1ff" stroke="#82b1ff" stroke-width="1.5"/>
+            <text x="80" y="309" fill="#9e9e9e" font-size="9">newest</text>
+            <circle cx="120" cy="305" r="5" fill="#2a2a2a" stroke="#82b1ff" stroke-width="1.5"/>
+            <text x="130" y="309" fill="#9e9e9e" font-size="9">older</text>
+            <polygon points="162,305 169,299 176,305 169,311" fill="#ffd54f"/>
+            <text x="181" y="309" fill="#9e9e9e" font-size="9">mood</text>
+            <line x1="218" y1="301" x2="228" y2="309" stroke="#ef5350" stroke-width="2"/>
+            <line x1="228" y1="301" x2="218" y2="309" stroke="#ef5350" stroke-width="2"/>
+            <text x="234" y="309" fill="#9e9e9e" font-size="9">target</text>
+          </svg>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
       <h2>Debug Messages</h2>
       <div class="debug-box">
         <p v-for="(line, idx) in debugMessagesReversed" :key="`${idx}-${line}`" class="debug-line">{{ line }}</p>
@@ -757,6 +935,132 @@ onMounted(async () => {
     formMessage.value = `Load failed: ${err.message}`
   }
 })
+
+// ── DJ Simulator ──────────────────────────────────────────────────────────────
+const simResult = ref(null)
+const simLoading = ref(false)
+const simError = ref('')
+const simOverrides = reactive({}) // attrId -> number override for target
+
+const SIM_GRAPH_X0 = 60
+const SIM_GRAPH_Y0 = 10
+const SIM_GRAPH_W  = 550 // inner width (from x=60 to x=610)
+const SIM_GRAPH_H  = 258 // inner height (from y=10 to y=268)
+
+function simAttrName(attrId) {
+  const def = (simResult.value?.attributeDefinitions ?? attributeDefinitions.value)
+    .find(d => d.id === attrId)
+  return def?.name ?? attrId
+}
+
+function fmtN(value) {
+  return typeof value === 'number' ? value.toFixed(3) : '—'
+}
+
+function resetSimOverrides() {
+  const target = simResult.value?.effectiveTargetAttributes ?? {}
+  for (const k of Object.keys(simOverrides)) delete simOverrides[k]
+  for (const [k, v] of Object.entries(target)) simOverrides[k] = v
+}
+
+async function runDjSimulation() {
+  simLoading.value = true
+  simError.value = ''
+  try {
+    const overrideAttrs = Object.keys(simOverrides).length > 0 ? { ...simOverrides } : undefined
+    const res = await fetch('/api/music/dj-simulate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ targetAttributes: overrideAttrs }),
+    })
+    const data = await res.json()
+    if (!res.ok) throw new Error(data?.error ?? 'Simulation failed')
+    simResult.value = data
+    // Seed overrides from the returned effective targets if not yet set.
+    for (const [k, v] of Object.entries(data.effectiveTargetAttributes ?? {})) {
+      if (!(k in simOverrides)) simOverrides[k] = v
+    }
+  } catch (err) {
+    simError.value = `Simulation failed: ${err.message}`
+  } finally {
+    simLoading.value = false
+  }
+}
+
+function simGraphAttrToXY(attrs) {
+  const attrIds = simResult.value?.customAttrIds ?? []
+  const xAttr = attrIds[0] ?? null
+  const yAttr = attrIds[1] ?? null
+  const xVal = xAttr !== null && typeof attrs[xAttr] === 'number' ? attrs[xAttr] : 0.5
+  const yVal = yAttr !== null && typeof attrs[yAttr] === 'number' ? attrs[yAttr] : null
+  const x = SIM_GRAPH_X0 + xVal * SIM_GRAPH_W
+  const y = yVal !== null
+    ? SIM_GRAPH_Y0 + (1 - yVal) * SIM_GRAPH_H
+    : SIM_GRAPH_Y0 + SIM_GRAPH_H / 2
+  return { x, y }
+}
+
+const simGraphNodes = computed(() => {
+  if (!simResult.value) return []
+  const tracks = simResult.value.recentlyPlayedTracks
+  if (tracks.length === 0) return []
+  const attrIds = simResult.value.customAttrIds
+  const hasY = attrIds.length >= 2
+  const hasX = attrIds.length >= 1
+  return tracks.map((track, idx) => {
+    let x, y
+    if (!hasX) {
+      // No attributes: layout as timeline left-to-right.
+      x = SIM_GRAPH_X0 + (tracks.length === 1 ? SIM_GRAPH_W / 2 : (idx / (tracks.length - 1)) * SIM_GRAPH_W)
+      y = SIM_GRAPH_Y0 + SIM_GRAPH_H / 2
+    } else if (!hasY) {
+      // One attribute: X = attribute, Y = play order.
+      const xVal = typeof track.attrs[attrIds[0]] === 'number' ? track.attrs[attrIds[0]] : 0.5
+      x = SIM_GRAPH_X0 + xVal * SIM_GRAPH_W
+      y = SIM_GRAPH_Y0 + (tracks.length === 1 ? SIM_GRAPH_H / 2 : (idx / (tracks.length - 1)) * SIM_GRAPH_H)
+    } else {
+      const pos = simGraphAttrToXY(track.attrs)
+      x = pos.x
+      y = pos.y
+    }
+    return {
+      x,
+      y,
+      title: track.title,
+      artist: track.artist,
+      label: track.title.length > 10 ? track.title.slice(0, 9) + '…' : track.title,
+      isNewest: idx === tracks.length - 1,
+      isOldest: idx === 0,
+    }
+  })
+})
+
+const simGraphEdges = computed(() => {
+  const nodes = simGraphNodes.value
+  const edges = []
+  for (let i = 0; i + 1 < nodes.length; i++) {
+    edges.push({ x1: nodes[i].x, y1: nodes[i].y, x2: nodes[i + 1].x, y2: nodes[i + 1].y })
+  }
+  return edges
+})
+
+const simGraphMood = computed(() => {
+  if (!simResult.value) return null
+  const mv = simResult.value.moodVector
+  if (!mv || Object.keys(mv).length === 0) return null
+  const { x, y } = simGraphAttrToXY(mv)
+  const r = 7
+  return { x, y, points: `${x},${y - r} ${x + r},${y} ${x},${y + r} ${x - r},${y}` }
+})
+
+const simGraphTarget = computed(() => {
+  if (!simResult.value) return null
+  const ta = simResult.value.effectiveTargetAttributes
+  const attrIds = simResult.value.customAttrIds
+  if (!ta || attrIds.length === 0) return null
+  const { x, y } = simGraphAttrToXY(ta)
+  return { x, y }
+})
 </script>
 
 <style scoped>
@@ -1050,5 +1354,115 @@ h1 {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 0.76rem;
   white-space: pre-wrap;
+}
+
+/* ── DJ Simulator ─────────────────────────────────────────────────────────── */
+
+.sim-block {
+  border-top: 1px solid #222;
+  margin-top: 0.85rem;
+  padding-top: 0.75rem;
+}
+
+.sim-block:first-child {
+  border-top: none;
+  margin-top: 0.3rem;
+  padding-top: 0;
+}
+
+.sim-block-title {
+  margin: 0 0 0.5rem;
+  font-weight: 600;
+  font-size: 0.88rem;
+  color: #e0e0e0;
+}
+
+.sim-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.78rem;
+  color: #bdbdbd;
+}
+
+.sim-table th {
+  background: #1a1a1a;
+  color: #9e9e9e;
+  padding: 0.3rem 0.45rem;
+  text-align: left;
+  white-space: nowrap;
+  border-bottom: 1px solid #2a2a2a;
+}
+
+.sim-table td {
+  padding: 0.28rem 0.45rem;
+  border-bottom: 1px solid #1e1e1e;
+  white-space: nowrap;
+}
+
+.sim-table tbody tr:hover {
+  background: #1c1c1c;
+}
+
+.sim-num {
+  text-align: right;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.sim-title {
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sim-artist {
+  max-width: 110px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #9e9e9e;
+}
+
+.sim-dist-a { color: #82b1ff; }
+.sim-dist-b { color: #a5d6a7; }
+
+.sim-score-col {
+  font-weight: 700;
+  color: #ffd54f;
+}
+
+.sim-current-row td {
+  background: #1a1f2e;
+}
+
+.sim-override-col {
+  min-width: 160px;
+}
+
+.sim-slider-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.sim-slider-row input {
+  flex: 1;
+}
+
+.sim-table-scroll {
+  overflow-x: auto;
+  max-height: 360px;
+  overflow-y: auto;
+  border: 1px solid #222;
+  border-radius: 6px;
+}
+
+.sim-graph {
+  width: 100%;
+  max-width: 620px;
+  height: 320px;
+  display: block;
+  background: #111;
+  border: 1px solid #222;
+  border-radius: 8px;
+  margin-top: 0.5rem;
 }
 </style>

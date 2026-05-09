@@ -16,7 +16,7 @@ import {
   newModule as createModule,
   patchModule as patchOverlayModule,
 } from './module-models.js'
-import { selectNextTrack } from './dj-selector.js'
+import { selectNextTrack, computeMoodVector, scoreCandidateTrack } from './dj-selector.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const DATA_FILE = join(__dirname, 'data.json')
@@ -1364,6 +1364,176 @@ app.post('/api/music/import', musicImportLimiter, (req, res) => {
   saveState()
   broadcast()
   res.status(201).json(getMusicSnapshot())
+})
+
+app.post('/api/music/dj-simulate', (req, res) => {
+  const overlay = getActive()
+  const djModule = overlay?.modules?.find(m => m.type === 'dj') ?? null
+
+  // IDs of all custom (non-liked) attributes.
+  const customAttrIds = (Array.isArray(state.music.attributeDefinitions)
+    ? state.music.attributeDefinitions
+    : []).filter(d => d.type === 'custom').map(d => d.id)
+
+  const djConfig = djModule
+    ? {
+      likedBonus:       djModule.likedBonus   ?? 1,
+      stylePenalty:     djModule.stylePenalty  ?? 0.1,
+      variance:         djModule.variance      ?? 0,
+      moodWindow:       djModule.moodWindow    ?? 5,
+      minRepeats:       djModule.minRepeats    ?? 0,
+      targetStyles:     djModule.targetStyles  ?? [],
+      targetAttributes: djModule.targetAttributes ?? {},
+    }
+    : {
+      likedBonus: 1, stylePenalty: 0.1, variance: 0,
+      moodWindow: 5, minRepeats: 0,
+      targetStyles: [], targetAttributes: {},
+    }
+
+  // Apply caller-supplied overrides (for simulation without persisting).
+  const effectiveTargetAttributes = { ...djConfig.targetAttributes }
+  const overrideAttrs = req.body?.targetAttributes
+  if (overrideAttrs && typeof overrideAttrs === 'object' && !Array.isArray(overrideAttrs)) {
+    for (const [k, v] of Object.entries(overrideAttrs)) {
+      if (customAttrIds.includes(k) && typeof v === 'number' && Number.isFinite(v)) {
+        effectiveTargetAttributes[k] = Math.max(0, Math.min(1, v))
+      }
+    }
+  }
+  const effectiveTargetStyles = Array.isArray(req.body?.targetStyles)
+    ? req.body.targetStyles.filter(s => typeof s === 'string' && s.trim())
+    : djConfig.targetStyles
+
+  const recentlyPlayed = Array.isArray(state.music.recentlyPlayed) ? state.music.recentlyPlayed : []
+  const now = Date.now()
+
+  // Compute current mood vector from recently played tracks.
+  const moodVector = computeMoodVector(
+    recentlyPlayed,
+    djConfig.moodWindow,
+    customAttrIds,
+    (id) => getTrackAttributeValues(id, now),
+  )
+
+  // Identify the currently-playing track and its styles.
+  const currentTrackId = state.music.library.find(
+    t => t.audioPath === state.music?.song?.audioPath,
+  )?.id ?? null
+  const currentStyles = currentTrackId
+    ? normalizeStyleList(state.music.trackMetadata?.[currentTrackId]?.styles ?? [])
+    : []
+
+  // Eligible candidates under the active overlay's album rules.
+  const candidates = getAllowedTracksForOverlay(state.activeId)
+
+  // Score every candidate with a step-by-step breakdown.
+  const sharesStyleFn = (stylesA, stylesB) => {
+    if (!Array.isArray(stylesA) || !Array.isArray(stylesB)) return false
+    const setA = new Set(stylesA)
+    return stylesB.some(style => setA.has(style))
+  }
+
+  const scoredCandidates = candidates.map(track => {
+    const attrs  = getTrackAttributeValues(track.id, now)
+    const styles = normalizeStyleList(state.music.trackMetadata?.[track.id]?.styles ?? [])
+
+    // Step 1: per-attribute absolute differences from current mood.
+    const moodAttrDistances = {}
+    let moodAttrDistanceTotal = 0
+    for (const attrId of customAttrIds) {
+      const a = typeof attrs[attrId]       === 'number' ? attrs[attrId]       : 0.5
+      const m = typeof moodVector[attrId]  === 'number' ? moodVector[attrId]  : 0.5
+      const d = Math.abs(a - m)
+      moodAttrDistances[attrId] = d
+      moodAttrDistanceTotal    += d
+    }
+
+    // Step 2: style penalty vs current song.
+    const stylePenaltyA = sharesStyleFn(styles, currentStyles) ? 0 : djConfig.stylePenalty
+
+    // Step 3: liked adjustment (negative = bonus for liked tracks).
+    const likedValue     = typeof attrs[LIKED_ATTRIBUTE_ID] === 'number' ? attrs[LIKED_ATTRIBUTE_ID] : 0
+    const likedAdjustment = -(likedValue * djConfig.likedBonus)
+
+    const distanceA = moodAttrDistanceTotal + stylePenaltyA + likedAdjustment
+
+    // Step 4: per-attribute absolute differences from target.
+    const targetAttrDistances = {}
+    let targetAttrDistanceTotal = 0
+    for (const attrId of customAttrIds) {
+      const a = typeof attrs[attrId] === 'number' ? attrs[attrId] : 0.5
+      const t = typeof effectiveTargetAttributes[attrId] === 'number' ? effectiveTargetAttributes[attrId] : 0.5
+      const d = Math.abs(a - t)
+      targetAttrDistances[attrId] = d
+      targetAttrDistanceTotal    += d
+    }
+
+    // Step 4b: style penalty vs target styles (only when target styles are set).
+    const stylePenaltyB = (effectiveTargetStyles.length > 0 && !sharesStyleFn(styles, effectiveTargetStyles))
+      ? djConfig.stylePenalty
+      : 0
+
+    const distanceB = targetAttrDistanceTotal + stylePenaltyB
+
+    // Step 5: final score (no variance for deterministic simulation).
+    const finalScore = (distanceA + distanceB) / 2
+
+    return {
+      id:    track.id,
+      title: track.title,
+      artist: track.artist,
+      album: track.album,
+      attrs,
+      styles,
+      moodAttrDistances,
+      moodAttrDistanceTotal,
+      stylePenaltyA,
+      likedValue,
+      likedAdjustment,
+      distanceA,
+      targetAttrDistances,
+      targetAttrDistanceTotal,
+      stylePenaltyB,
+      distanceB,
+      finalScore,
+      isCurrentTrack: track.id === currentTrackId,
+    }
+  })
+
+  scoredCandidates.sort((a, b) => a.finalScore - b.finalScore)
+
+  // Return recently played tracks within the last (moodWindow * 3) slots for the graph.
+  const graphCount = Math.max(djConfig.moodWindow * 3, 20)
+  const recentlyPlayedTracks = recentlyPlayed
+    .slice(-graphCount)
+    .map(id => {
+      const track = state.music.library.find(t => t.id === id)
+      if (!track) return null
+      return {
+        id,
+        title:  track.title,
+        artist: track.artist,
+        album:  track.album,
+        attrs:  getTrackAttributeValues(id, now),
+        styles: normalizeStyleList(state.music.trackMetadata?.[id]?.styles ?? []),
+      }
+    })
+    .filter(Boolean)
+
+  res.json({
+    hasDj: djModule !== null,
+    customAttrIds,
+    attributeDefinitions: state.music.attributeDefinitions,
+    moodVector,
+    currentTrackId,
+    currentStyles,
+    djConfig,
+    effectiveTargetAttributes,
+    effectiveTargetStyles,
+    recentlyPlayedTracks,
+    candidates: scoredCandidates,
+  })
 })
 
 app.post('/api/music/pause', (req, res) => {
