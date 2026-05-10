@@ -303,7 +303,7 @@
             <span class="sim-step-arrow-right">→</span>
             <span class="sim-step-selected" :class="{ 'sim-step-none': !step.selectedId }">{{ step.selectedId ? simTrackLabel(step.selectedId) : 'none' }}</span>
             <span class="sim-step-mood" v-if="simResult.customAttrIds.length > 0">
-              Mood: {{ simResult.customAttrIds.map(id => `${simAttrName(id)}=${fmtN(step.moodVector[id] ?? 0.5)}`).join(', ') }}
+              Mood: {{ simFormatMoodVector(step) }}
             </span>
           </button>
 
@@ -1005,6 +1005,13 @@ function simAttrName(attrId) {
   const def = (simResult.value?.attributeDefinitions ?? attributeDefinitions.value)
     .find(d => d.id === attrId)
   return def?.name ?? attrId
+}
+
+function simFormatMoodVector(step) {
+  if (!simResult.value) return ''
+  return simResult.value.customAttrIds
+    .map(id => `${simAttrName(id)}=${fmtN(step.moodVector[id] ?? 0.5)}`)
+    .join(', ')
 }
 
 function simTrackLabel(trackId) {

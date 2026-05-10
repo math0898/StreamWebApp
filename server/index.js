@@ -1568,8 +1568,8 @@ app.post('/api/music/dj-simulate', (req, res) => {
     }
 
     // Cycle detection: same (moodVector, selectedTrack) pair already seen?
-    const moodKey = customAttrIds.map(id => (moodVector[id] ?? 0.5).toFixed(4)).join(',')
-    const stateKey = `${winner.id}|${moodKey}`
+    const moodKey = customAttrIds.map(id => (moodVector[id] ?? 0.5).toFixed(4)).join('\x00')
+    const stateKey = `${winner.id}\x00${moodKey}`
     const isCycle = seenStateKeys.has(stateKey)
     seenStateKeys.add(stateKey)
 
@@ -1601,8 +1601,9 @@ app.post('/api/music/dj-simulate', (req, res) => {
 
   // Build deduplicated track detail map for the graph.
   const uniqueGraphIds = [...new Set(graphPathIds)]
+  const libraryById = new Map(state.music.library.map(t => [t.id, t]))
   const graphTracks = uniqueGraphIds.map(id => {
-    const track = state.music.library.find(t => t.id === id)
+    const track = libraryById.get(id)
     if (!track) return null
     return {
       id,
