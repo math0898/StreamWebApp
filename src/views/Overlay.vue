@@ -32,33 +32,36 @@
           {{ mod.text }}
         </div>
 
-        <div
-          v-else-if="mod.type === 'leaderboard'"
-          v-show="!leaderboardVisualHidden[mod.id]"
-          class="leaderboard-module"
-          :style="leaderboardStyle(mod)"
-        >
-          <div class="leaderboard-header" :style="leaderboardHeaderStyle(mod)">
-            <span>{{ mod.name || 'Leaderboard' }}</span>
-          </div>
-          <transition-group name="leaderboard-row" tag="div" class="leaderboard-rows">
-            <div
-              v-for="row in visibleLeaderboardRows(mod)"
-              :key="`${mod.id}-${row.id}`"
-              class="leaderboard-row"
-              :class="{
-                'leaderboard-row-focus': row.id === mod.focusParticipantId,
-                'leaderboard-row-divider': row.showDivider,
-                'leaderboard-row-no-rank': !leaderboardAppearance(mod).showRankNumbers,
-              }"
-              :style="leaderboardRowStyle(mod, row)"
-            >
-              <span v-if="leaderboardAppearance(mod).showRankNumbers" class="leaderboard-rank" :style="leaderboardNumberStyle(mod, row)">#{{ row.rank }}</span>
-              <span class="leaderboard-user" :style="leaderboardUsernameStyle(mod, row)">{{ row.username }}</span>
-              <span class="leaderboard-score" :style="leaderboardNumberStyle(mod, row)">{{ formatLeaderboardScore(row.score, mod.scoreType) }}</span>
+        <transition v-else-if="mod.type === 'leaderboard'" name="leaderboard-pop">
+          <div
+            v-if="!leaderboardVisualHidden[mod.id]"
+            class="leaderboard-pop-shell"
+            :style="leaderboardShellStyle(mod)"
+          >
+            <div class="leaderboard-module" :style="leaderboardStyle(mod)">
+              <div class="leaderboard-header" :style="leaderboardHeaderStyle(mod)">
+                <span>{{ mod.name || 'Leaderboard' }}</span>
+              </div>
+              <transition-group name="leaderboard-row" tag="div" class="leaderboard-rows">
+                <div
+                  v-for="row in visibleLeaderboardRows(mod)"
+                  :key="`${mod.id}-${row.id}`"
+                  class="leaderboard-row"
+                  :class="{
+                    'leaderboard-row-focus': row.id === mod.focusParticipantId,
+                    'leaderboard-row-divider': row.showDivider,
+                    'leaderboard-row-no-rank': !leaderboardAppearance(mod).showRankNumbers,
+                  }"
+                  :style="leaderboardRowStyle(mod, row)"
+                >
+                  <span v-if="leaderboardAppearance(mod).showRankNumbers" class="leaderboard-rank" :style="leaderboardNumberStyle(mod, row)">#{{ row.rank }}</span>
+                  <span class="leaderboard-user" :style="leaderboardUsernameStyle(mod, row)">{{ row.username }}</span>
+                  <span class="leaderboard-score" :style="leaderboardNumberStyle(mod, row)">{{ formatLeaderboardScore(row.score, mod.scoreType) }}</span>
+                </div>
+              </transition-group>
             </div>
-          </transition-group>
-        </div>
+          </div>
+        </transition>
         </template>
       </template>
 
@@ -226,18 +229,12 @@ function textModuleStyle(mod) {
 }
 
 function leaderboardStyle(mod) {
-  const tr = mod?.transform ?? {}
   const appearance = leaderboardAppearance(mod)
   const bg = parseHexColor(appearance.backgroundColor)
   const br = parseHexColor(appearance.borderColor)
   const bgAlpha = (appearance.backgroundAlpha / 255).toFixed(3)
   const brAlpha = (appearance.borderAlpha / 255).toFixed(3)
   return {
-    position: 'absolute',
-    left: '0px',
-    top: '0px',
-    transform: `translate(${tr.x ?? 0}px, ${tr.y ?? 0}px) scale(${tr.scaleX ?? 1}, ${tr.scaleY ?? 1})`,
-    transformOrigin: 'left top',
     background: bg ? `rgba(${bg.r}, ${bg.g}, ${bg.b}, ${bgAlpha})` : 'transparent',
     border: br ? `1px solid rgba(${br.r}, ${br.g}, ${br.b}, ${brAlpha})` : 'none',
   }
@@ -256,11 +253,26 @@ function leaderboardAppearance(mod) {
     : []
 
   const srcAutoHide = source.autoHide && typeof source.autoHide === 'object' ? source.autoHide : {}
+  const srcAnimation = srcAutoHide.animation && typeof srcAutoHide.animation === 'object' ? srcAutoHide.animation : {}
   const autoHide = {
     enabled: srcAutoHide.enabled === true,
     hideDelaySec: typeof srcAutoHide.hideDelaySec === 'number' && srcAutoHide.hideDelaySec >= 0 ? srcAutoHide.hideDelaySec : 30,
     periodicShowSec: typeof srcAutoHide.periodicShowSec === 'number' && srcAutoHide.periodicShowSec >= 0 ? srcAutoHide.periodicShowSec : 5,
     periodicIntervalSec: typeof srcAutoHide.periodicIntervalSec === 'number' && srcAutoHide.periodicIntervalSec >= 0 ? srcAutoHide.periodicIntervalSec : 60,
+    animation: {
+      transitionDurationSec: typeof srcAnimation.transitionDurationSec === 'number' && srcAnimation.transitionDurationSec >= 0
+        ? srcAnimation.transitionDurationSec
+        : 0.35,
+      motionDirection: ['none', 'up', 'down', 'left', 'right'].includes(srcAnimation.motionDirection)
+        ? srcAnimation.motionDirection
+        : 'down',
+      motionDistancePx: typeof srcAnimation.motionDistancePx === 'number' && srcAnimation.motionDistancePx >= 0
+        ? srcAnimation.motionDistancePx
+        : 14,
+      motionInterpolation: ['linear', 'quadratic', 'exponential'].includes(srcAnimation.motionInterpolation)
+        ? srcAnimation.motionInterpolation
+        : 'linear',
+    },
   }
 
   return {
@@ -278,6 +290,26 @@ function leaderboardAppearance(mod) {
     borderColor: typeof source.borderColor === 'string' && /^#[0-9a-f]{6}$/i.test(source.borderColor) ? source.borderColor : '#ffffff',
     borderAlpha: Number.isFinite(Number(source.borderAlpha)) && Number(source.borderAlpha) >= 0 && Number(source.borderAlpha) <= 255 ? Math.round(Number(source.borderAlpha)) : 36,
     autoHide,
+  }
+}
+
+function leaderboardShellStyle(mod) {
+  const tr = mod?.transform ?? {}
+  const animation = leaderboardAppearance(mod).autoHide.animation
+  const vector = motionVector(animation.motionDirection)
+  return {
+    position: 'absolute',
+    left: '0px',
+    top: '0px',
+    transformOrigin: 'left top',
+    '--leaderboard-base-x': `${tr.x ?? 0}px`,
+    '--leaderboard-base-y': `${tr.y ?? 0}px`,
+    '--leaderboard-scale-x': `${tr.scaleX ?? 1}`,
+    '--leaderboard-scale-y': `${tr.scaleY ?? 1}`,
+    '--leaderboard-motion-x': `${vector.x * animation.motionDistancePx}px`,
+    '--leaderboard-motion-y': `${vector.y * animation.motionDistancePx}px`,
+    '--leaderboard-transition-duration': `${animation.transitionDurationSec}s`,
+    '--leaderboard-motion-ease': interpolationCurve(animation.motionInterpolation),
   }
 }
 
@@ -683,6 +715,11 @@ onUnmounted(() => {
   pointer-events: none;
 }
 
+.leaderboard-pop-shell {
+  transform: translate(var(--leaderboard-base-x, 0px), var(--leaderboard-base-y, 0px))
+    scale(var(--leaderboard-scale-x, 1), var(--leaderboard-scale-y, 1));
+}
+
 .leaderboard-header {
   font-size: 0.85rem;
   font-weight: 700;
@@ -749,6 +786,23 @@ onUnmounted(() => {
 .leaderboard-row-leave-to {
   opacity: 0;
   transform: translateY(-6px);
+}
+
+.leaderboard-pop-enter-active,
+.leaderboard-pop-leave-active {
+  transition:
+    opacity var(--leaderboard-transition-duration, 0.35s) var(--leaderboard-motion-ease, linear),
+    transform var(--leaderboard-transition-duration, 0.35s) var(--leaderboard-motion-ease, linear);
+}
+
+.leaderboard-pop-enter-from,
+.leaderboard-pop-leave-to {
+  opacity: 0;
+  transform: translate(
+      calc(var(--leaderboard-base-x, 0px) + var(--leaderboard-motion-x, 0px)),
+      calc(var(--leaderboard-base-y, 0px) + var(--leaderboard-motion-y, 0px))
+    )
+    scale(var(--leaderboard-scale-x, 1), var(--leaderboard-scale-y, 1));
 }
 
 .now-playing-popup {

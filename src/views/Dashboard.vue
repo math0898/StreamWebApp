@@ -596,6 +596,50 @@
                 />
                 <span class="edit-unit">s</span>
               </div>
+              <div class="edit-row">
+                <label class="edit-label">Fade + Motion Duration (sec)</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.05"
+                  :value="leaderboardAppearance(mod).autoHide.animation.transitionDurationSec"
+                  @change="patchLeaderboardAppearance(mod, { autoHide: { ...leaderboardAppearance(mod).autoHide, animation: { ...leaderboardAppearance(mod).autoHide.animation, transitionDurationSec: $event.target.valueAsNumber } } })"
+                />
+              </div>
+              <div class="edit-row">
+                <label class="edit-label">Motion Direction</label>
+                <select
+                  :value="leaderboardAppearance(mod).autoHide.animation.motionDirection"
+                  @change="patchLeaderboardAppearance(mod, { autoHide: { ...leaderboardAppearance(mod).autoHide, animation: { ...leaderboardAppearance(mod).autoHide.animation, motionDirection: $event.target.value } } })"
+                >
+                  <option value="none">None (fade only)</option>
+                  <option value="up">Vertical Up</option>
+                  <option value="down">Vertical Down</option>
+                  <option value="left">Horizontal Left</option>
+                  <option value="right">Horizontal Right</option>
+                </select>
+              </div>
+              <div class="edit-row">
+                <label class="edit-label">Motion Distance (px)</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  :value="leaderboardAppearance(mod).autoHide.animation.motionDistancePx"
+                  @change="patchLeaderboardAppearance(mod, { autoHide: { ...leaderboardAppearance(mod).autoHide, animation: { ...leaderboardAppearance(mod).autoHide.animation, motionDistancePx: $event.target.valueAsNumber } } })"
+                />
+              </div>
+              <div class="edit-row">
+                <label class="edit-label">Motion Interpolation</label>
+                <select
+                  :value="leaderboardAppearance(mod).autoHide.animation.motionInterpolation"
+                  @change="patchLeaderboardAppearance(mod, { autoHide: { ...leaderboardAppearance(mod).autoHide, animation: { ...leaderboardAppearance(mod).autoHide.animation, motionInterpolation: $event.target.value } } })"
+                >
+                  <option value="linear">Linear</option>
+                  <option value="quadratic">Quadratic</option>
+                  <option value="exponential">Exponential</option>
+                </select>
+              </div>
             </template>
             <p class="edit-sub">Transform</p>
             <div v-for="f in transformFields" :key="mod.id+'l'+f.key" class="edit-row">
@@ -1031,11 +1075,26 @@ function leaderboardAppearance(mod) {
     : []
 
   const srcAutoHide = source.autoHide && typeof source.autoHide === 'object' ? source.autoHide : {}
+  const srcAnimation = srcAutoHide.animation && typeof srcAutoHide.animation === 'object' ? srcAutoHide.animation : {}
   const autoHide = {
     enabled: srcAutoHide.enabled === true,
     hideDelaySec: typeof srcAutoHide.hideDelaySec === 'number' && srcAutoHide.hideDelaySec >= 0 ? srcAutoHide.hideDelaySec : 30,
     periodicShowSec: typeof srcAutoHide.periodicShowSec === 'number' && srcAutoHide.periodicShowSec >= 0 ? srcAutoHide.periodicShowSec : 5,
     periodicIntervalSec: typeof srcAutoHide.periodicIntervalSec === 'number' && srcAutoHide.periodicIntervalSec >= 0 ? srcAutoHide.periodicIntervalSec : 60,
+    animation: {
+      transitionDurationSec: typeof srcAnimation.transitionDurationSec === 'number' && srcAnimation.transitionDurationSec >= 0
+        ? srcAnimation.transitionDurationSec
+        : 0.35,
+      motionDirection: ['none', 'up', 'down', 'left', 'right'].includes(srcAnimation.motionDirection)
+        ? srcAnimation.motionDirection
+        : 'down',
+      motionDistancePx: typeof srcAnimation.motionDistancePx === 'number' && srcAnimation.motionDistancePx >= 0
+        ? srcAnimation.motionDistancePx
+        : 14,
+      motionInterpolation: ['linear', 'quadratic', 'exponential'].includes(srcAnimation.motionInterpolation)
+        ? srcAnimation.motionInterpolation
+        : 'linear',
+    },
   }
 
   return {
@@ -1066,7 +1125,13 @@ function patchLeaderboardAppearance(mod, patch) {
       : current.usernameColors,
     numberColorKeys: Array.isArray(patch.numberColorKeys) ? patch.numberColorKeys : current.numberColorKeys,
     autoHide: patch.autoHide && typeof patch.autoHide === 'object'
-      ? { ...current.autoHide, ...patch.autoHide }
+      ? {
+        ...current.autoHide,
+        ...patch.autoHide,
+        animation: patch.autoHide.animation && typeof patch.autoHide.animation === 'object'
+          ? { ...current.autoHide.animation, ...patch.autoHide.animation }
+          : current.autoHide.animation,
+      }
       : current.autoHide,
   }
   patchMod(mod.id, { appearance: next })

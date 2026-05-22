@@ -61,6 +61,12 @@ export const FACTORY_MODULE_DEFAULTS = {
         hideDelaySec: 30,
         periodicShowSec: 5,
         periodicIntervalSec: 60,
+        animation: {
+          transitionDurationSec: 0.35,
+          motionDirection: 'down',
+          motionDistancePx: 14,
+          motionInterpolation: 'linear',
+        },
       },
     },
     focusParticipantId: 'streamer',
@@ -110,6 +116,8 @@ function sanitizeLeaderboardAppearance(raw, fallback = FACTORY_MODULE_DEFAULTS.l
 
   const fallbackAutoHide = fallback.autoHide ?? FACTORY_MODULE_DEFAULTS.leaderboard.appearance.autoHide
   const srcAutoHide = source.autoHide && typeof source.autoHide === 'object' ? source.autoHide : {}
+  const fallbackAnimation = fallbackAutoHide.animation ?? FACTORY_MODULE_DEFAULTS.leaderboard.appearance.autoHide.animation
+  const srcAnimation = srcAutoHide.animation && typeof srcAutoHide.animation === 'object' ? srcAutoHide.animation : {}
   const autoHide = {
     enabled: typeof srcAutoHide.enabled === 'boolean' ? srcAutoHide.enabled : !!fallbackAutoHide.enabled,
     hideDelaySec: typeof srcAutoHide.hideDelaySec === 'number' && srcAutoHide.hideDelaySec >= 0
@@ -118,6 +126,20 @@ function sanitizeLeaderboardAppearance(raw, fallback = FACTORY_MODULE_DEFAULTS.l
       ? srcAutoHide.periodicShowSec : fallbackAutoHide.periodicShowSec,
     periodicIntervalSec: typeof srcAutoHide.periodicIntervalSec === 'number' && srcAutoHide.periodicIntervalSec >= 0
       ? srcAutoHide.periodicIntervalSec : fallbackAutoHide.periodicIntervalSec,
+    animation: {
+      transitionDurationSec: typeof srcAnimation.transitionDurationSec === 'number' && srcAnimation.transitionDurationSec >= 0
+        ? srcAnimation.transitionDurationSec
+        : fallbackAnimation.transitionDurationSec,
+      motionDirection: ['none', 'up', 'down', 'left', 'right'].includes(srcAnimation.motionDirection)
+        ? srcAnimation.motionDirection
+        : fallbackAnimation.motionDirection,
+      motionDistancePx: typeof srcAnimation.motionDistancePx === 'number' && srcAnimation.motionDistancePx >= 0
+        ? srcAnimation.motionDistancePx
+        : fallbackAnimation.motionDistancePx,
+      motionInterpolation: ['linear', 'quadratic', 'exponential'].includes(srcAnimation.motionInterpolation)
+        ? srcAnimation.motionInterpolation
+        : fallbackAnimation.motionInterpolation,
+    },
   }
 
   return {
