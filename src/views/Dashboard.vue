@@ -465,6 +465,52 @@
                 :value="leaderboardAppearance(mod).focusHighlightColor"
                 @input="patchLeaderboardAppearance(mod, { focusHighlightColor: $event.target.value })"
               />
+              <input
+                type="number"
+                min="0"
+                max="255"
+                step="1"
+                class="alpha-input"
+                :value="leaderboardAppearance(mod).focusHighlightAlpha"
+                @change="patchLeaderboardAppearance(mod, { focusHighlightAlpha: $event.target.valueAsNumber })"
+                title="Alpha (0–255)"
+              />
+            </div>
+            <div class="edit-row">
+              <label class="edit-label">Background</label>
+              <input
+                type="color"
+                :value="leaderboardAppearance(mod).backgroundColor"
+                @input="patchLeaderboardAppearance(mod, { backgroundColor: $event.target.value })"
+              />
+              <input
+                type="number"
+                min="0"
+                max="255"
+                step="1"
+                class="alpha-input"
+                :value="leaderboardAppearance(mod).backgroundAlpha"
+                @change="patchLeaderboardAppearance(mod, { backgroundAlpha: $event.target.valueAsNumber })"
+                title="Alpha (0–255)"
+              />
+            </div>
+            <div class="edit-row">
+              <label class="edit-label">Border</label>
+              <input
+                type="color"
+                :value="leaderboardAppearance(mod).borderColor"
+                @input="patchLeaderboardAppearance(mod, { borderColor: $event.target.value })"
+              />
+              <input
+                type="number"
+                min="0"
+                max="255"
+                step="1"
+                class="alpha-input"
+                :value="leaderboardAppearance(mod).borderAlpha"
+                @change="patchLeaderboardAppearance(mod, { borderAlpha: $event.target.valueAsNumber })"
+                title="Alpha (0–255)"
+              />
             </div>
             <div class="edit-row">
               <label class="edit-label">Number Color</label>
@@ -505,7 +551,51 @@
                 />
                 <button class="action-btn action-delete" @click="removeLeaderboardNumberColorKey(mod, keyIdx)">✕</button>
               </div>
-              <button class="counter-btn-sm" @click="addLeaderboardNumberColorKey(mod)">+ Add Number Key</button>
+              <button class="counter-btn-sm" @click="addLeaderboardNumberColorKey(mod)">+ Add Score Key</button>
+            </template>
+            <p class="edit-sub">Auto-Hide</p>
+            <div class="edit-row checkbox-row">
+              <label class="edit-label">Enable</label>
+              <input
+                type="checkbox"
+                :checked="leaderboardAppearance(mod).autoHide.enabled"
+                @change="patchLeaderboardAppearance(mod, { autoHide: { ...leaderboardAppearance(mod).autoHide, enabled: $event.target.checked } })"
+              />
+            </div>
+            <template v-if="leaderboardAppearance(mod).autoHide.enabled">
+              <div class="edit-row">
+                <label class="edit-label">Hide After</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  :value="leaderboardAppearance(mod).autoHide.hideDelaySec"
+                  @change="patchLeaderboardAppearance(mod, { autoHide: { ...leaderboardAppearance(mod).autoHide, hideDelaySec: $event.target.valueAsNumber } })"
+                />
+                <span class="edit-unit">s</span>
+              </div>
+              <div class="edit-row">
+                <label class="edit-label">Show Every</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  :value="leaderboardAppearance(mod).autoHide.periodicIntervalSec"
+                  @change="patchLeaderboardAppearance(mod, { autoHide: { ...leaderboardAppearance(mod).autoHide, periodicIntervalSec: $event.target.valueAsNumber } })"
+                />
+                <span class="edit-unit">s</span>
+              </div>
+              <div class="edit-row">
+                <label class="edit-label">Show For</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  :value="leaderboardAppearance(mod).autoHide.periodicShowSec"
+                  @change="patchLeaderboardAppearance(mod, { autoHide: { ...leaderboardAppearance(mod).autoHide, periodicShowSec: $event.target.valueAsNumber } })"
+                />
+                <span class="edit-unit">s</span>
+              </div>
             </template>
             <p class="edit-sub">Transform</p>
             <div v-for="f in transformFields" :key="mod.id+'l'+f.key" class="edit-row">
@@ -516,24 +606,30 @@
             <div
               v-for="(participant, index) in (mod.participants ?? [])"
               :key="mod.id + '-participant-' + participant.id"
-              class="leaderboard-participant-row"
+              class="participant-block"
             >
-              <button class="counter-btn-sm" :class="{ 'participant-focus-btn': participant.id === mod.focusParticipantId }" @click="patchMod(mod.id, { focusParticipantId: participant.id })">Focus</button>
-              <input type="text" class="wide-input" :value="participant.username" @change="updateLeaderboardParticipant(mod, participant.id, { username: $event.target.value })" />
-              <input type="number" step="0.001" class="participant-score-input" :value="participant.score" @change="updateLeaderboardParticipant(mod, participant.id, { score: $event.target.valueAsNumber })" />
-              <input
-                type="color"
-                :value="leaderboardUsernameColor(mod, participant.id)"
-                @input="setLeaderboardUsernameColor(mod, participant.id, $event.target.value)"
-              />
-              <button
-                v-if="hasLeaderboardUsernameColor(mod, participant.id)"
-                class="action-btn"
-                @click="clearLeaderboardUsernameColor(mod, participant.id)"
-              >Default</button>
-              <span v-else class="participant-default-pill">Default</span>
-              <button v-if="(mod.participants?.length ?? 0) > 1" class="action-btn action-delete" @click="removeLeaderboardParticipant(mod, participant.id)">✕</button>
-              <span class="participant-rank">#{{ index + 1 }}</span>
+              <div class="participant-main-row">
+                <span class="participant-rank">#{{ index + 1 }}</span>
+                <input type="text" class="wide-input" :value="participant.username" @change="updateLeaderboardParticipant(mod, participant.id, { username: $event.target.value })" />
+                <input type="number" step="0.001" class="participant-score-input" :value="participant.score" @change="updateLeaderboardParticipant(mod, participant.id, { score: $event.target.valueAsNumber })" />
+                <button class="action-btn participant-expand-btn" :class="{ 'action-edit-active': isParticipantEditOpen(mod.id, participant.id) }" @click="toggleParticipantEdit(mod.id, participant.id)" title="More options">⋯</button>
+              </div>
+              <div v-if="isParticipantEditOpen(mod.id, participant.id)" class="participant-extra-row">
+                <button class="counter-btn-sm" :class="{ 'participant-focus-btn': participant.id === mod.focusParticipantId }" @click="patchMod(mod.id, { focusParticipantId: participant.id })">Focus</button>
+                <input
+                  type="color"
+                  :value="leaderboardUsernameColor(mod, participant.id)"
+                  @input="setLeaderboardUsernameColor(mod, participant.id, $event.target.value)"
+                  title="Username color"
+                />
+                <button
+                  v-if="hasLeaderboardUsernameColor(mod, participant.id)"
+                  class="action-btn"
+                  @click="clearLeaderboardUsernameColor(mod, participant.id)"
+                >Default</button>
+                <span v-else class="participant-default-pill">Default</span>
+                <button v-if="(mod.participants?.length ?? 0) > 1" class="action-btn action-delete" @click="removeLeaderboardParticipant(mod, participant.id)">✕</button>
+              </div>
             </div>
             <button class="counter-btn-sm" @click="addLeaderboardParticipant(mod)">+ Add Participant</button>
           </template>
@@ -571,6 +667,7 @@ const modules = ref([])
 const steps   = reactive({})
 const setVals = reactive({})
 const editOpen = reactive({})
+const participantEditOpen = reactive({})
 const music = ref(null)
 const musicEditOpen = ref(false)
 const canPause = computed(() => !!music.value && music.value.status !== 'paused')
@@ -642,6 +739,15 @@ function toggleEdit(modId) {
   editOpen[modId] = !editOpen[modId]
 }
 
+function toggleParticipantEdit(modId, participantId) {
+  const key = `${modId}-${participantId}`
+  participantEditOpen[key] = !participantEditOpen[key]
+}
+
+function isParticipantEditOpen(modId, participantId) {
+  return !!participantEditOpen[`${modId}-${participantId}`]
+}
+
 async function toggleHidden(mod) {
   await patchMod(mod.id, { hidden: !mod.hidden })
 }
@@ -650,6 +756,11 @@ function applyModules(newModules) {
   const newIds = new Set(newModules.map(m => m.id))
   for (const key of Object.keys(editOpen)) {
     if (!newIds.has(key)) delete editOpen[key]
+  }
+  // Clean up participantEditOpen keys for removed modules
+  for (const key of Object.keys(participantEditOpen)) {
+    const modId = key.split('-').slice(0, -1).join('-')
+    if (!newIds.has(modId)) delete participantEditOpen[key]
   }
   modules.value = newModules
   for (const key of Object.keys(steps)) delete steps[key]
@@ -919,6 +1030,14 @@ function leaderboardAppearance(mod) {
       .sort((a, b) => a.position - b.position)
     : []
 
+  const srcAutoHide = source.autoHide && typeof source.autoHide === 'object' ? source.autoHide : {}
+  const autoHide = {
+    enabled: srcAutoHide.enabled === true,
+    hideDelaySec: typeof srcAutoHide.hideDelaySec === 'number' && srcAutoHide.hideDelaySec >= 0 ? srcAutoHide.hideDelaySec : 30,
+    periodicShowSec: typeof srcAutoHide.periodicShowSec === 'number' && srcAutoHide.periodicShowSec >= 0 ? srcAutoHide.periodicShowSec : 5,
+    periodicIntervalSec: typeof srcAutoHide.periodicIntervalSec === 'number' && srcAutoHide.periodicIntervalSec >= 0 ? srcAutoHide.periodicIntervalSec : 60,
+  }
+
   return {
     showRankNumbers: source.showRankNumbers !== false,
     textColor: typeof source.textColor === 'string' && /^#[0-9a-f]{6}$/i.test(source.textColor) ? source.textColor : '#ffffff',
@@ -928,6 +1047,12 @@ function leaderboardAppearance(mod) {
     numberColor: typeof source.numberColor === 'string' && /^#[0-9a-f]{6}$/i.test(source.numberColor) ? source.numberColor : '#82b1ff',
     numberColorKeys,
     focusHighlightColor: typeof source.focusHighlightColor === 'string' && /^#[0-9a-f]{6}$/i.test(source.focusHighlightColor) ? source.focusHighlightColor : '#82b1ff',
+    focusHighlightAlpha: Number.isFinite(Number(source.focusHighlightAlpha)) && Number(source.focusHighlightAlpha) >= 0 && Number(source.focusHighlightAlpha) <= 255 ? Math.round(Number(source.focusHighlightAlpha)) : 255,
+    backgroundColor: typeof source.backgroundColor === 'string' && /^#[0-9a-f]{6}$/i.test(source.backgroundColor) ? source.backgroundColor : '#000000',
+    backgroundAlpha: Number.isFinite(Number(source.backgroundAlpha)) && Number(source.backgroundAlpha) >= 0 && Number(source.backgroundAlpha) <= 255 ? Math.round(Number(source.backgroundAlpha)) : 199,
+    borderColor: typeof source.borderColor === 'string' && /^#[0-9a-f]{6}$/i.test(source.borderColor) ? source.borderColor : '#ffffff',
+    borderAlpha: Number.isFinite(Number(source.borderAlpha)) && Number(source.borderAlpha) >= 0 && Number(source.borderAlpha) <= 255 ? Math.round(Number(source.borderAlpha)) : 36,
+    autoHide,
   }
 }
 
@@ -940,6 +1065,9 @@ function patchLeaderboardAppearance(mod, patch) {
       ? patch.usernameColors
       : current.usernameColors,
     numberColorKeys: Array.isArray(patch.numberColorKeys) ? patch.numberColorKeys : current.numberColorKeys,
+    autoHide: patch.autoHide && typeof patch.autoHide === 'object'
+      ? { ...current.autoHide, ...patch.autoHide }
+      : current.autoHide,
   }
   patchMod(mod.id, { appearance: next })
 }
@@ -1535,6 +1663,23 @@ h1 {
   text-align: left;
 }
 
+.edit-unit {
+  font-size: 0.75rem;
+  color: #757575;
+  flex-shrink: 0;
+}
+
+.alpha-input {
+  background-color: #1e1e1e;
+  color: #e0e0e0;
+  border: 1px solid #424242;
+  border-radius: 6px;
+  padding: 0.25rem 0.35rem;
+  font-size: 0.8rem;
+  width: 3.5rem;
+  text-align: center;
+}
+
 /* ── Edit panel ──────────────────────────────────────── */
 .edit-panel {
   padding: 0.6rem 0 0;
@@ -1590,12 +1735,30 @@ h1 {
   font-style: italic;
 }
 
-.leaderboard-participant-row {
+.participant-block {
+  margin-bottom: 0.35rem;
+}
+
+.participant-main-row {
   display: grid;
-  grid-template-columns: auto 1fr 5.6rem auto auto auto auto;
+  grid-template-columns: auto 1fr 5.6rem auto;
   gap: 0.4rem;
   align-items: center;
-  margin-bottom: 0.4rem;
+}
+
+.participant-extra-row {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+  padding: 0.3rem 0.3rem 0.1rem 1.4rem;
+  border-left: 2px solid #2a2a2a;
+  margin-left: 0.2rem;
+}
+
+.participant-expand-btn {
+  padding: 0.18rem 0.45rem;
+  font-size: 1rem;
+  line-height: 1;
 }
 
 .leaderboard-keyvalue-row {

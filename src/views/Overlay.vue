@@ -34,6 +34,7 @@
 
         <div
           v-else-if="mod.type === 'leaderboard'"
+          v-show="!leaderboardVisualHidden[mod.id]"
           class="leaderboard-module"
           :style="leaderboardStyle(mod)"
         >
@@ -84,7 +85,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted, computed } from 'vue'
+import { ref, reactive, onMounted, onUnmounted, computed } from 'vue'
 
 const modules = ref([])
 const music = ref(null)
@@ -117,6 +118,55 @@ let popupEndTimer = null
 let popupPeriodicTimer = null
 let source = null
 let skipInFlight = false
+
+// Leaderboard auto-hide state
+const leaderboardVisualHidden = reactive({})
+const leaderboardHideTimers = {}
+const leaderboardPeriodicTimers = {}
+const leaderboardLastSignature = {}
+
+function leaderboardParticipantsSignature(mod) {
+  return JSON.stringify((mod?.participants ?? []).map(p => ({ id: p.id, score: p.score })))
+}
+
+function showLeaderboard(modId, hideSec) {
+  leaderboardVisualHidden[modId] = false
+  if (leaderboardHideTimers[modId]) clearTimeout(leaderboardHideTimers[modId])
+  if (hideSec > 0) {
+    leaderboardHideTimers[modId] = setTimeout(() => { leaderboardVisualHidden[modId] = true }, hideSec * 1000)
+  }
+}
+
+function clearLeaderboardAutoHideTimers(modId) {
+  if (leaderboardHideTimers[modId]) { clearTimeout(leaderboardHideTimers[modId]); delete leaderboardHideTimers[modId] }
+  if (leaderboardPeriodicTimers[modId]) { clearInterval(leaderboardPeriodicTimers[modId]); delete leaderboardPeriodicTimers[modId] }
+}
+
+function onLeaderboardModuleUpdate(mod) {
+  const autoHide = leaderboardAppearance(mod).autoHide
+  if (!autoHide.enabled) {
+    clearLeaderboardAutoHideTimers(mod.id)
+    leaderboardVisualHidden[mod.id] = false
+    return
+  }
+
+  const sig = leaderboardParticipantsSignature(mod)
+  const changed = leaderboardLastSignature[mod.id] !== sig
+  leaderboardLastSignature[mod.id] = sig
+
+  if (changed || !(mod.id in leaderboardVisualHidden)) {
+    showLeaderboard(mod.id, autoHide.hideDelaySec)
+  }
+
+  // Setup periodic timer if not already running
+  if (!leaderboardPeriodicTimers[mod.id] && autoHide.periodicIntervalSec > 0 && autoHide.periodicShowSec > 0) {
+    leaderboardPeriodicTimers[mod.id] = setInterval(() => {
+      if (leaderboardVisualHidden[mod.id]) {
+        showLeaderboard(mod.id, autoHide.periodicShowSec)
+      }
+    }, autoHide.periodicIntervalSec * 1000)
+  }
+}
 
 function pct(count, maxVal) {
   if (maxVal <= 0) return '0%'
@@ -177,12 +227,19 @@ function textModuleStyle(mod) {
 
 function leaderboardStyle(mod) {
   const tr = mod?.transform ?? {}
+  const appearance = leaderboardAppearance(mod)
+  const bg = parseHexColor(appearance.backgroundColor)
+  const br = parseHexColor(appearance.borderColor)
+  const bgAlpha = (appearance.backgroundAlpha / 255).toFixed(3)
+  const brAlpha = (appearance.borderAlpha / 255).toFixed(3)
   return {
     position: 'absolute',
     left: '0px',
     top: '0px',
     transform: `translate(${tr.x ?? 0}px, ${tr.y ?? 0}px) scale(${tr.scaleX ?? 1}, ${tr.scaleY ?? 1})`,
     transformOrigin: 'left top',
+    background: bg ? `rgba(${bg.r}, ${bg.g}, ${bg.b}, ${bgAlpha})` : 'transparent',
+    border: br ? `1px solid rgba(${br.r}, ${br.g}, ${br.b}, ${brAlpha})` : 'none',
   }
 }
 
@@ -198,6 +255,14 @@ function leaderboardAppearance(mod) {
       .sort((a, b) => a.position - b.position)
     : []
 
+  const srcAutoHide = source.autoHide && typeof source.autoHide === 'object' ? source.autoHide : {}
+  const autoHide = {
+    enabled: srcAutoHide.enabled === true,
+    hideDelaySec: typeof srcAutoHide.hideDelaySec === 'number' && srcAutoHide.hideDelaySec >= 0 ? srcAutoHide.hideDelaySec : 30,
+    periodicShowSec: typeof srcAutoHide.periodicShowSec === 'number' && srcAutoHide.periodicShowSec >= 0 ? srcAutoHide.periodicShowSec : 5,
+    periodicIntervalSec: typeof srcAutoHide.periodicIntervalSec === 'number' && srcAutoHide.periodicIntervalSec >= 0 ? srcAutoHide.periodicIntervalSec : 60,
+  }
+
   return {
     showRankNumbers: source.showRankNumbers !== false,
     textColor: typeof source.textColor === 'string' && /^#[0-9a-f]{6}$/i.test(source.textColor) ? source.textColor : '#ffffff',
@@ -207,6 +272,12 @@ function leaderboardAppearance(mod) {
     numberColor: typeof source.numberColor === 'string' && /^#[0-9a-f]{6}$/i.test(source.numberColor) ? source.numberColor : '#82b1ff',
     numberColorKeys,
     focusHighlightColor: typeof source.focusHighlightColor === 'string' && /^#[0-9a-f]{6}$/i.test(source.focusHighlightColor) ? source.focusHighlightColor : '#82b1ff',
+    focusHighlightAlpha: Number.isFinite(Number(source.focusHighlightAlpha)) && Number(source.focusHighlightAlpha) >= 0 && Number(source.focusHighlightAlpha) <= 255 ? Math.round(Number(source.focusHighlightAlpha)) : 255,
+    backgroundColor: typeof source.backgroundColor === 'string' && /^#[0-9a-f]{6}$/i.test(source.backgroundColor) ? source.backgroundColor : '#000000',
+    backgroundAlpha: Number.isFinite(Number(source.backgroundAlpha)) && Number(source.backgroundAlpha) >= 0 && Number(source.backgroundAlpha) <= 255 ? Math.round(Number(source.backgroundAlpha)) : 199,
+    borderColor: typeof source.borderColor === 'string' && /^#[0-9a-f]{6}$/i.test(source.borderColor) ? source.borderColor : '#ffffff',
+    borderAlpha: Number.isFinite(Number(source.borderAlpha)) && Number(source.borderAlpha) >= 0 && Number(source.borderAlpha) <= 255 ? Math.round(Number(source.borderAlpha)) : 36,
+    autoHide,
   }
 }
 
@@ -224,12 +295,12 @@ function parseHexColor(hex) {
   }
 }
 
-function averageHexColors(a, b, fallback = '#82b1ff') {
+function lerpHexColor(a, b, t, fallback = '#82b1ff') {
   const left = parseHexColor(a)
   const right = parseHexColor(b)
   if (!left || !right) return fallback
-  const mix = (x, y) => Math.round((x + y) / 2).toString(16).padStart(2, '0')
-  return `#${mix(left.r, right.r)}${mix(left.g, right.g)}${mix(left.b, right.b)}`
+  const lerp = (x, y) => Math.round(x + (y - x) * t).toString(16).padStart(2, '0')
+  return `#${lerp(left.r, right.r)}${lerp(left.g, right.g)}${lerp(left.b, right.b)}`
 }
 
 function leaderboardNumberColor(mod, row) {
@@ -237,18 +308,16 @@ function leaderboardNumberColor(mod, row) {
   if (appearance.numberColorMode !== 'gradient') return appearance.numberColor
   const keys = appearance.numberColorKeys
   if (keys.length === 0) return appearance.numberColor
-  const position = Number(row?.rank ?? 0)
-  if (!Number.isFinite(position)) return appearance.numberColor
-  if (position <= keys[0].position) return keys[0].color
+  const value = typeof row?.score === 'number' && Number.isFinite(row.score) ? row.score : 0
+  if (value <= keys[0].position) return keys[0].color
   const last = keys[keys.length - 1]
-  if (position >= last.position) return last.color
+  if (value >= last.position) return last.color
   for (let i = 0; i < keys.length - 1; i += 1) {
     const left = keys[i]
     const right = keys[i + 1]
-    if (position === left.position) return left.color
-    if (position === right.position) return right.color
-    if (position > left.position && position < right.position) {
-      return averageHexColors(left.color, right.color, appearance.numberColor)
+    if (value >= left.position && value <= right.position) {
+      const t = right.position === left.position ? 0 : (value - left.position) / (right.position - left.position)
+      return lerpHexColor(left.color, right.color, t, appearance.numberColor)
     }
   }
   return appearance.numberColor
@@ -260,10 +329,11 @@ function leaderboardRowStyle(mod, row) {
   if (!focus) return { color: appearance.textColor }
   const color = parseHexColor(appearance.focusHighlightColor)
   if (!color) return { color: appearance.textColor }
+  const alpha = appearance.focusHighlightAlpha / 255
   return {
     color: appearance.textColor,
-    background: `rgba(${color.r}, ${color.g}, ${color.b}, 0.2)`,
-    border: `1px solid rgba(${color.r}, ${color.g}, ${color.b}, 0.55)`,
+    background: `rgba(${color.r}, ${color.g}, ${color.b}, ${(alpha * 0.2).toFixed(3)})`,
+    border: `1px solid rgba(${color.r}, ${color.g}, ${color.b}, ${(alpha * 0.55).toFixed(3)})`,
   }
 }
 
@@ -519,7 +589,12 @@ onMounted(() => {
   source = new EventSource('/api/events')
   source.onmessage = (event) => {
     const data = JSON.parse(event.data)
-    if (Array.isArray(data?.modules)) modules.value = data.modules
+    if (Array.isArray(data?.modules)) {
+      for (const mod of data.modules) {
+        if (mod.type === 'leaderboard') onLeaderboardModuleUpdate(mod)
+      }
+      modules.value = data.modules
+    }
     normalizePopupConfig(data?.nowPlayingPopup)
     if (data?.music) syncMusic(data.music)
   }
@@ -538,6 +613,8 @@ onUnmounted(() => {
   if (popupHideTimer) clearTimeout(popupHideTimer)
   if (popupEndTimer) clearTimeout(popupEndTimer)
   if (popupPeriodicTimer) clearInterval(popupPeriodicTimer)
+  for (const modId of Object.keys(leaderboardHideTimers)) clearTimeout(leaderboardHideTimers[modId])
+  for (const modId of Object.keys(leaderboardPeriodicTimers)) clearInterval(leaderboardPeriodicTimers[modId])
 })
 </script>
 
@@ -601,8 +678,6 @@ onUnmounted(() => {
   max-width: 420px;
   padding: 0.65rem 0.8rem;
   border-radius: 12px;
-  background: rgba(0, 0, 0, 0.78);
-  border: 1px solid rgba(255, 255, 255, 0.14);
   backdrop-filter: blur(2px);
   color: #ffffff;
   pointer-events: none;
@@ -638,8 +713,6 @@ onUnmounted(() => {
 }
 
 .leaderboard-row-focus {
-  background: rgba(130, 177, 255, 0.2);
-  border: 1px solid rgba(130, 177, 255, 0.55);
 }
 
 .leaderboard-row-divider {

@@ -51,6 +51,17 @@ export const FACTORY_MODULE_DEFAULTS = {
       numberColor: '#82b1ff',
       numberColorKeys: [],
       focusHighlightColor: '#82b1ff',
+      focusHighlightAlpha: 255,
+      backgroundColor: '#000000',
+      backgroundAlpha: 199,
+      borderColor: '#ffffff',
+      borderAlpha: 36,
+      autoHide: {
+        enabled: false,
+        hideDelaySec: 30,
+        periodicShowSec: 5,
+        periodicIntervalSec: 60,
+      },
     },
     focusParticipantId: 'streamer',
     participants: [
@@ -66,6 +77,12 @@ function sanitizeHexColor(raw, fallback) {
   if (typeof raw !== 'string') return fallback
   const normalized = raw.trim().toLowerCase()
   return /^#[0-9a-f]{6}$/i.test(normalized) ? normalized : fallback
+}
+
+function sanitizeAlpha(raw, fallback) {
+  const n = Number(raw)
+  if (!Number.isFinite(n) || n < 0 || n > 255) return fallback
+  return Math.round(n)
 }
 
 function sanitizeLeaderboardAppearance(raw, fallback = FACTORY_MODULE_DEFAULTS.leaderboard.appearance) {
@@ -91,6 +108,18 @@ function sanitizeLeaderboardAppearance(raw, fallback = FACTORY_MODULE_DEFAULTS.l
     }
   }
 
+  const fallbackAutoHide = fallback.autoHide ?? FACTORY_MODULE_DEFAULTS.leaderboard.appearance.autoHide
+  const srcAutoHide = source.autoHide && typeof source.autoHide === 'object' ? source.autoHide : {}
+  const autoHide = {
+    enabled: typeof srcAutoHide.enabled === 'boolean' ? srcAutoHide.enabled : !!fallbackAutoHide.enabled,
+    hideDelaySec: typeof srcAutoHide.hideDelaySec === 'number' && srcAutoHide.hideDelaySec >= 0
+      ? srcAutoHide.hideDelaySec : fallbackAutoHide.hideDelaySec,
+    periodicShowSec: typeof srcAutoHide.periodicShowSec === 'number' && srcAutoHide.periodicShowSec >= 0
+      ? srcAutoHide.periodicShowSec : fallbackAutoHide.periodicShowSec,
+    periodicIntervalSec: typeof srcAutoHide.periodicIntervalSec === 'number' && srcAutoHide.periodicIntervalSec >= 0
+      ? srcAutoHide.periodicIntervalSec : fallbackAutoHide.periodicIntervalSec,
+  }
+
   return {
     showRankNumbers: typeof source.showRankNumbers === 'boolean'
       ? source.showRankNumbers
@@ -102,6 +131,12 @@ function sanitizeLeaderboardAppearance(raw, fallback = FACTORY_MODULE_DEFAULTS.l
     numberColor: sanitizeHexColor(source.numberColor, fallback.numberColor),
     numberColorKeys: [...uniqueGradientKeys.values()].sort((a, b) => a.position - b.position),
     focusHighlightColor: sanitizeHexColor(source.focusHighlightColor, fallback.focusHighlightColor),
+    focusHighlightAlpha: sanitizeAlpha(source.focusHighlightAlpha, fallback.focusHighlightAlpha ?? 255),
+    backgroundColor: sanitizeHexColor(source.backgroundColor, fallback.backgroundColor ?? '#000000'),
+    backgroundAlpha: sanitizeAlpha(source.backgroundAlpha, fallback.backgroundAlpha ?? 199),
+    borderColor: sanitizeHexColor(source.borderColor, fallback.borderColor ?? '#ffffff'),
+    borderAlpha: sanitizeAlpha(source.borderAlpha, fallback.borderAlpha ?? 36),
+    autoHide,
   }
 }
 
@@ -395,6 +430,7 @@ class LeaderboardModule extends AbstractModule {
         ...this.appearance,
         usernameColors: { ...this.appearance.usernameColors },
         numberColorKeys: this.appearance.numberColorKeys.map(item => ({ ...item })),
+        autoHide: { ...this.appearance.autoHide },
       },
       focusParticipantId: this.focusParticipantId,
       participants: this.participants.map(participant => ({ ...participant })),
