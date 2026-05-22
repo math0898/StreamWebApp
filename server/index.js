@@ -16,7 +16,7 @@ import {
   newModule as createModule,
   patchModule as patchOverlayModule,
 } from './module-models.js'
-import { selectNextTrack } from './dj-selector.js'
+import { selectNextTrack, computeMoodVector, scoreCandidateTrack } from './dj-selector.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const DATA_FILE = join(__dirname, 'data.json')
@@ -1364,6 +1364,270 @@ app.post('/api/music/import', musicImportLimiter, (req, res) => {
   saveState()
   broadcast()
   res.status(201).json(getMusicSnapshot())
+})
+
+const DJ_SIMULATE_MAX_STEPS_LIMIT = 50
+
+app.post('/api/music/dj-simulate', (req, res) => {
+  const overlay = getActive()
+  const djModule = overlay?.modules?.find(m => m.type === 'dj') ?? null
+
+  // IDs of all custom (non-liked) attributes.
+  const customAttrIds = (Array.isArray(state.music.attributeDefinitions)
+    ? state.music.attributeDefinitions
+    : []).filter(d => d.type === 'custom').map(d => d.id)
+
+  const djConfig = djModule
+    ? {
+      likedBonus:       djModule.likedBonus   ?? 1,
+      stylePenalty:     djModule.stylePenalty  ?? 0.1,
+      moodWindow:       djModule.moodWindow    ?? 5,
+      minRepeats:       djModule.minRepeats    ?? 0,
+      targetStyles:     djModule.targetStyles  ?? [],
+      targetAttributes: djModule.targetAttributes ?? {},
+    }
+    : {
+      likedBonus: 1, stylePenalty: 0.1,
+      moodWindow: 5, minRepeats: 0,
+      targetStyles: [], targetAttributes: {},
+    }
+
+  // Apply caller-supplied target overrides (for simulation without persisting).
+  const effectiveTargetAttributes = { ...djConfig.targetAttributes }
+  const overrideAttrs = req.body?.targetAttributes
+  if (overrideAttrs && typeof overrideAttrs === 'object' && !Array.isArray(overrideAttrs)) {
+    for (const [k, v] of Object.entries(overrideAttrs)) {
+      if (customAttrIds.includes(k) && typeof v === 'number' && Number.isFinite(v)) {
+        effectiveTargetAttributes[k] = Math.max(0, Math.min(1, v))
+      }
+    }
+  }
+  const effectiveTargetStyles = Array.isArray(req.body?.targetStyles)
+    ? req.body.targetStyles.filter(s => typeof s === 'string' && s.trim())
+    : djConfig.targetStyles
+
+  // Resolve starting track.
+  const realCurrentId = state.music.library.find(
+    t => t.audioPath === state.music?.song?.audioPath,
+  )?.id ?? null
+  const requestedStartId = typeof req.body?.startTrackId === 'string' ? req.body.startTrackId : null
+  const startId = requestedStartId
+    ? (state.music.library.find(t => t.id === requestedStartId)?.id ?? realCurrentId)
+    : realCurrentId
+
+  // Max simulation steps (capped).
+  const maxSteps = Math.min(
+    typeof req.body?.maxSteps === 'number' && req.body.maxSteps >= 1
+      ? Math.floor(req.body.maxSteps)
+      : 20,
+    DJ_SIMULATE_MAX_STEPS_LIMIT,
+  )
+
+  const now = Date.now()
+  const allCandidates = getAllowedTracksForOverlay(state.activeId)
+
+  if (allCandidates.length === 0) {
+    return res.json({
+      hasDj: djModule !== null,
+      customAttrIds,
+      attributeDefinitions: state.music.attributeDefinitions,
+      djConfig,
+      effectiveTargetAttributes,
+      effectiveTargetStyles,
+      startTrackId: startId,
+      steps: [],
+      stopReason: 'no_candidates',
+      graphPath: [],
+      graphTracks: [],
+    })
+  }
+
+  // Helper: does stylesA share any style with stylesB?
+  function sharesStyle(stylesA, stylesB) {
+    if (!Array.isArray(stylesA) || !Array.isArray(stylesB)) return false
+    const setA = new Set(stylesA)
+    return stylesB.some(s => setA.has(s))
+  }
+
+  // Score all candidates for a given simulation state.
+  function scoreCandidates(moodVector, currentTrackId, excludedIds) {
+    const currentStyles = currentTrackId
+      ? normalizeStyleList(state.music.trackMetadata?.[currentTrackId]?.styles ?? [])
+      : []
+    return allCandidates.map(track => {
+      const attrs  = getTrackAttributeValues(track.id, now)
+      const styles = normalizeStyleList(state.music.trackMetadata?.[track.id]?.styles ?? [])
+      const excluded = excludedIds.has(track.id)
+
+      // Mood distance — per attribute
+      const moodAttrDistances = {}
+      let moodAttrTotal = 0
+      for (const attrId of customAttrIds) {
+        const a = typeof attrs[attrId] === 'number' ? attrs[attrId] : 0.5
+        const m = typeof moodVector[attrId] === 'number' ? moodVector[attrId] : 0.5
+        const d = Math.abs(a - m)
+        moodAttrDistances[attrId] = d
+        moodAttrTotal += d
+      }
+
+      // Style penalty vs current song's styles
+      const stylePenaltyMood = sharesStyle(styles, currentStyles) ? 0 : djConfig.stylePenalty
+
+      // Liked adjustment
+      const likedValue = typeof attrs[LIKED_ATTRIBUTE_ID] === 'number' ? attrs[LIKED_ATTRIBUTE_ID] : 0
+      const likedAdjustment = -(likedValue * djConfig.likedBonus)
+
+      const moodScore = moodAttrTotal + stylePenaltyMood + likedAdjustment
+
+      // Target distance — per attribute
+      const targetAttrDistances = {}
+      let targetAttrTotal = 0
+      for (const attrId of customAttrIds) {
+        const a = typeof attrs[attrId] === 'number' ? attrs[attrId] : 0.5
+        const t = typeof effectiveTargetAttributes[attrId] === 'number' ? effectiveTargetAttributes[attrId] : 0.5
+        const d = Math.abs(a - t)
+        targetAttrDistances[attrId] = d
+        targetAttrTotal += d
+      }
+
+      // Style penalty vs target styles (only when target styles are configured)
+      const stylePenaltyTarget = (effectiveTargetStyles.length > 0 && !sharesStyle(styles, effectiveTargetStyles))
+        ? djConfig.stylePenalty
+        : 0
+
+      const targetScore = targetAttrTotal + stylePenaltyTarget
+
+      // Final score = average of mood score and target score (variance omitted for determinism)
+      const finalScore = (moodScore + targetScore) / 2
+
+      return {
+        id: track.id,
+        title: track.title,
+        artist: track.artist,
+        album: track.album,
+        styles,
+        excluded,
+        moodAttrDistances,
+        stylePenaltyMood,
+        likedValue,
+        likedAdjustment,
+        moodScore,
+        targetAttrDistances,
+        stylePenaltyTarget,
+        targetScore,
+        finalScore,
+      }
+    }).sort((a, b) => {
+      // Non-excluded tracks first, then sort by finalScore ascending.
+      if (a.excluded !== b.excluded) return a.excluded ? 1 : -1
+      return a.finalScore - b.finalScore
+    })
+  }
+
+  // ── Multi-step simulation loop ─────────────────────────────────────────────
+  // Seed the history with the real recently-played list so that the initial
+  // mood window reflects actual playback state.
+  const simHistory = [...(Array.isArray(state.music.recentlyPlayed) ? state.music.recentlyPlayed : [])]
+  let currentId = startId
+  const steps = []
+  const seenStateKeys = new Set()
+  let stopReason = 'max_steps'
+  const graphPathIds = startId ? [startId] : []
+
+  for (let stepIdx = 0; stepIdx < maxSteps; stepIdx++) {
+    // Compute mood from the rolling history window.
+    const moodVector = computeMoodVector(
+      simHistory,
+      djConfig.moodWindow,
+      customAttrIds,
+      id => getTrackAttributeValues(id, now),
+    )
+
+    // Build the exclusion set: the last minRepeats entries + the current song.
+    const excludedIds = new Set(
+      djConfig.minRepeats > 0 ? simHistory.slice(-djConfig.minRepeats) : [],
+    )
+    if (currentId) excludedIds.add(currentId)
+
+    const scored = scoreCandidates(moodVector, currentId, excludedIds)
+
+    // Pick best non-excluded track; fall back to best excluded if all excluded.
+    const winner = scored.find(c => !c.excluded) ?? scored[0] ?? null
+
+    if (!winner) {
+      steps.push({
+        stepNumber: stepIdx,
+        currentTrackId: currentId,
+        moodVector,
+        excludedIds: [...excludedIds],
+        candidates: scored,
+        selectedId: null,
+      })
+      stopReason = 'no_candidates'
+      break
+    }
+
+    // Cycle detection: same (moodVector, selectedTrack) pair already seen?
+    const moodKey = customAttrIds.map(id => (moodVector[id] ?? 0.5).toFixed(4)).join('\x00')
+    const stateKey = `${winner.id}\x00${moodKey}`
+    const isCycle = seenStateKeys.has(stateKey)
+    seenStateKeys.add(stateKey)
+
+    steps.push({
+      stepNumber: stepIdx,
+      currentTrackId: currentId,
+      moodVector,
+      excludedIds: [...excludedIds],
+      candidates: scored,
+      selectedId: winner.id,
+    })
+
+    graphPathIds.push(winner.id)
+
+    if (isCycle) {
+      stopReason = 'cycle'
+      break
+    }
+
+    // Advance simulation state: push current track into history, move to winner.
+    if (currentId) {
+      simHistory.push(currentId)
+      if (simHistory.length > MAX_RECENTLY_PLAYED) {
+        simHistory.splice(0, simHistory.length - MAX_RECENTLY_PLAYED)
+      }
+    }
+    currentId = winner.id
+  }
+
+  // Build deduplicated track detail map for the graph.
+  const uniqueGraphIds = [...new Set(graphPathIds)]
+  const libraryById = new Map(state.music.library.map(t => [t.id, t]))
+  const graphTracks = uniqueGraphIds.map(id => {
+    const track = libraryById.get(id)
+    if (!track) return null
+    return {
+      id,
+      title: track.title,
+      artist: track.artist,
+      album: track.album,
+      attrs: getTrackAttributeValues(id, now),
+      styles: normalizeStyleList(state.music.trackMetadata?.[id]?.styles ?? []),
+    }
+  }).filter(Boolean)
+
+  res.json({
+    hasDj: djModule !== null,
+    customAttrIds,
+    attributeDefinitions: state.music.attributeDefinitions,
+    djConfig,
+    effectiveTargetAttributes,
+    effectiveTargetStyles,
+    startTrackId: startId,
+    steps,
+    stopReason,
+    graphPath: graphPathIds,
+    graphTracks,
+  })
 })
 
 app.post('/api/music/pause', (req, res) => {
