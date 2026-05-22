@@ -42,6 +42,16 @@ export const FACTORY_MODULE_DEFAULTS = {
     topCount: 3,
     neighborCount: 2,
     transform: { ...DEFAULT_LEADERBOARD_TRANSFORM },
+    appearance: {
+      showRankNumbers: true,
+      textColor: '#ffffff',
+      defaultUsernameColor: '#ffffff',
+      usernameColors: {},
+      numberColorMode: 'solid',
+      numberColor: '#82b1ff',
+      numberColorKeys: [],
+      focusHighlightColor: '#82b1ff',
+    },
     focusParticipantId: 'streamer',
     participants: [
       { id: 'streamer', username: 'Streamer', score: 50 },
@@ -50,6 +60,49 @@ export const FACTORY_MODULE_DEFAULTS = {
       { id: 'challenger-3', username: 'Rival Three', score: 31 },
     ],
   },
+}
+
+function sanitizeHexColor(raw, fallback) {
+  if (typeof raw !== 'string') return fallback
+  const normalized = raw.trim().toLowerCase()
+  return /^#[0-9a-f]{6}$/i.test(normalized) ? normalized : fallback
+}
+
+function sanitizeLeaderboardAppearance(raw, fallback = FACTORY_MODULE_DEFAULTS.leaderboard.appearance) {
+  const source = raw && typeof raw === 'object' ? raw : {}
+  const usernameColors = {}
+  if (source.usernameColors && typeof source.usernameColors === 'object' && !Array.isArray(source.usernameColors)) {
+    for (const [participantId, color] of Object.entries(source.usernameColors)) {
+      if (typeof participantId !== 'string' || !participantId.trim()) continue
+      const normalizedColor = sanitizeHexColor(color, '')
+      if (normalizedColor) usernameColors[participantId] = normalizedColor
+    }
+  }
+
+  const uniqueGradientKeys = new Map()
+  if (Array.isArray(source.numberColorKeys)) {
+    for (const item of source.numberColorKeys) {
+      if (!item || typeof item !== 'object') continue
+      const position = Number(item.position)
+      if (!Number.isFinite(position)) continue
+      const color = sanitizeHexColor(item.color, '')
+      if (!color) continue
+      uniqueGradientKeys.set(position, { position, color })
+    }
+  }
+
+  return {
+    showRankNumbers: typeof source.showRankNumbers === 'boolean'
+      ? source.showRankNumbers
+      : !!fallback.showRankNumbers,
+    textColor: sanitizeHexColor(source.textColor, fallback.textColor),
+    defaultUsernameColor: sanitizeHexColor(source.defaultUsernameColor, fallback.defaultUsernameColor),
+    usernameColors,
+    numberColorMode: source.numberColorMode === 'gradient' ? 'gradient' : 'solid',
+    numberColor: sanitizeHexColor(source.numberColor, fallback.numberColor),
+    numberColorKeys: [...uniqueGradientKeys.values()].sort((a, b) => a.position - b.position),
+    focusHighlightColor: sanitizeHexColor(source.focusHighlightColor, fallback.focusHighlightColor),
+  }
 }
 
 class AbstractModule {
@@ -280,6 +333,7 @@ class LeaderboardModule extends AbstractModule {
       ? Math.floor(saved.neighborCount)
       : d.neighborCount
     this.transform = { ...DEFAULT_LEADERBOARD_TRANSFORM, ...(saved?.transform ?? {}) }
+    this.appearance = sanitizeLeaderboardAppearance(saved?.appearance, d.appearance)
     this.focusParticipantId = typeof saved?.focusParticipantId === 'string' ? saved.focusParticipantId : d.focusParticipantId
     this.participants = []
     this.patch(saved ?? {}, newId)
@@ -299,6 +353,19 @@ class LeaderboardModule extends AbstractModule {
       if (typeof y === 'number') this.transform.y = y
       if (typeof scaleX === 'number') this.transform.scaleX = scaleX
       if (typeof scaleY === 'number') this.transform.scaleY = scaleY
+    }
+
+    if (patch?.appearance && typeof patch.appearance === 'object') {
+      const incoming = patch.appearance
+      const merged = {
+        ...this.appearance,
+        ...incoming,
+        usernameColors: incoming.usernameColors && typeof incoming.usernameColors === 'object' && !Array.isArray(incoming.usernameColors)
+          ? { ...this.appearance.usernameColors, ...incoming.usernameColors }
+          : this.appearance.usernameColors,
+        numberColorKeys: Array.isArray(incoming.numberColorKeys) ? incoming.numberColorKeys : this.appearance.numberColorKeys,
+      }
+      this.appearance = sanitizeLeaderboardAppearance(merged, FACTORY_MODULE_DEFAULTS.leaderboard.appearance)
     }
 
     if (Array.isArray(patch?.participants)) {
@@ -324,6 +391,11 @@ class LeaderboardModule extends AbstractModule {
       topCount: this.topCount,
       neighborCount: this.neighborCount,
       transform: { ...this.transform },
+      appearance: {
+        ...this.appearance,
+        usernameColors: { ...this.appearance.usernameColors },
+        numberColorKeys: this.appearance.numberColorKeys.map(item => ({ ...item })),
+      },
       focusParticipantId: this.focusParticipantId,
       participants: this.participants.map(participant => ({ ...participant })),
     }
@@ -394,6 +466,10 @@ export function newModule(type, moduleDefaults, newId) {
       topCount: d.topCount,
       neighborCount: d.neighborCount,
       transform: { ...DEFAULT_LEADERBOARD_TRANSFORM, ...(d.transform ?? {}) },
+      appearance: {
+        ...FACTORY_MODULE_DEFAULTS.leaderboard.appearance,
+        ...(d.appearance ?? {}),
+      },
       focusParticipantId: d.focusParticipantId,
       participants: Array.isArray(d.participants) ? d.participants.map(participant => ({ ...participant })) : [],
     }, newId).toObject()

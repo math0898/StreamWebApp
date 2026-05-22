@@ -37,7 +37,7 @@
           class="leaderboard-module"
           :style="leaderboardStyle(mod)"
         >
-          <div class="leaderboard-header">
+          <div class="leaderboard-header" :style="leaderboardHeaderStyle(mod)">
             <span>{{ mod.name || 'Leaderboard' }}</span>
           </div>
           <transition-group name="leaderboard-row" tag="div" class="leaderboard-rows">
@@ -45,11 +45,16 @@
               v-for="row in visibleLeaderboardRows(mod)"
               :key="`${mod.id}-${row.id}`"
               class="leaderboard-row"
-              :class="{ 'leaderboard-row-focus': row.id === mod.focusParticipantId }"
+              :class="{
+                'leaderboard-row-focus': row.id === mod.focusParticipantId,
+                'leaderboard-row-divider': row.showDivider,
+                'leaderboard-row-no-rank': !leaderboardAppearance(mod).showRankNumbers,
+              }"
+              :style="leaderboardRowStyle(mod, row)"
             >
-              <span class="leaderboard-rank">#{{ row.rank }}</span>
-              <span class="leaderboard-user">{{ row.username }}</span>
-              <span class="leaderboard-score">{{ formatLeaderboardScore(row.score, mod.scoreType) }}</span>
+              <span v-if="leaderboardAppearance(mod).showRankNumbers" class="leaderboard-rank" :style="leaderboardNumberStyle(mod, row)">#{{ row.rank }}</span>
+              <span class="leaderboard-user" :style="leaderboardUsernameStyle(mod, row)">{{ row.username }}</span>
+              <span class="leaderboard-score" :style="leaderboardNumberStyle(mod, row)">{{ formatLeaderboardScore(row.score, mod.scoreType) }}</span>
             </div>
           </transition-group>
         </div>
@@ -92,6 +97,8 @@ const popupConfig = ref({
   y: 0,
   hiddenVisual: false,
   defaultPlayMusic: true,
+  normalizeVolume: false,
+  normalizedVolumePct: 100,
   animation: {
     songStartShowSec: 6,
     songEndShowSec: 3,
@@ -179,6 +186,100 @@ function leaderboardStyle(mod) {
   }
 }
 
+function leaderboardAppearance(mod) {
+  const source = mod?.appearance ?? {}
+  const usernameColors = source.usernameColors && typeof source.usernameColors === 'object' && !Array.isArray(source.usernameColors)
+    ? source.usernameColors
+    : {}
+  const numberColorKeys = Array.isArray(source.numberColorKeys)
+    ? source.numberColorKeys
+      .map(item => ({ position: Number(item?.position), color: item?.color }))
+      .filter(item => Number.isFinite(item.position) && typeof item.color === 'string' && /^#[0-9a-f]{6}$/i.test(item.color))
+      .sort((a, b) => a.position - b.position)
+    : []
+
+  return {
+    showRankNumbers: source.showRankNumbers !== false,
+    textColor: typeof source.textColor === 'string' && /^#[0-9a-f]{6}$/i.test(source.textColor) ? source.textColor : '#ffffff',
+    defaultUsernameColor: typeof source.defaultUsernameColor === 'string' && /^#[0-9a-f]{6}$/i.test(source.defaultUsernameColor) ? source.defaultUsernameColor : '#ffffff',
+    usernameColors,
+    numberColorMode: source.numberColorMode === 'gradient' ? 'gradient' : 'solid',
+    numberColor: typeof source.numberColor === 'string' && /^#[0-9a-f]{6}$/i.test(source.numberColor) ? source.numberColor : '#82b1ff',
+    numberColorKeys,
+    focusHighlightColor: typeof source.focusHighlightColor === 'string' && /^#[0-9a-f]{6}$/i.test(source.focusHighlightColor) ? source.focusHighlightColor : '#82b1ff',
+  }
+}
+
+function leaderboardHeaderStyle(mod) {
+  return { color: leaderboardAppearance(mod).textColor }
+}
+
+function parseHexColor(hex) {
+  if (typeof hex !== 'string' || !/^#[0-9a-f]{6}$/i.test(hex)) return null
+  const normalized = hex.slice(1)
+  return {
+    r: Number.parseInt(normalized.slice(0, 2), 16),
+    g: Number.parseInt(normalized.slice(2, 4), 16),
+    b: Number.parseInt(normalized.slice(4, 6), 16),
+  }
+}
+
+function averageHexColors(a, b, fallback = '#82b1ff') {
+  const left = parseHexColor(a)
+  const right = parseHexColor(b)
+  if (!left || !right) return fallback
+  const mix = (x, y) => Math.round((x + y) / 2).toString(16).padStart(2, '0')
+  return `#${mix(left.r, right.r)}${mix(left.g, right.g)}${mix(left.b, right.b)}`
+}
+
+function leaderboardNumberColor(mod, row) {
+  const appearance = leaderboardAppearance(mod)
+  if (appearance.numberColorMode !== 'gradient') return appearance.numberColor
+  const keys = appearance.numberColorKeys
+  if (keys.length === 0) return appearance.numberColor
+  const position = Number(row?.rank ?? 0)
+  if (!Number.isFinite(position)) return appearance.numberColor
+  if (position <= keys[0].position) return keys[0].color
+  const last = keys[keys.length - 1]
+  if (position >= last.position) return last.color
+  for (let i = 0; i < keys.length - 1; i += 1) {
+    const left = keys[i]
+    const right = keys[i + 1]
+    if (position === left.position) return left.color
+    if (position === right.position) return right.color
+    if (position > left.position && position < right.position) {
+      return averageHexColors(left.color, right.color, appearance.numberColor)
+    }
+  }
+  return appearance.numberColor
+}
+
+function leaderboardRowStyle(mod, row) {
+  const appearance = leaderboardAppearance(mod)
+  const focus = row.id === mod.focusParticipantId
+  if (!focus) return { color: appearance.textColor }
+  const color = parseHexColor(appearance.focusHighlightColor)
+  if (!color) return { color: appearance.textColor }
+  return {
+    color: appearance.textColor,
+    background: `rgba(${color.r}, ${color.g}, ${color.b}, 0.2)`,
+    border: `1px solid rgba(${color.r}, ${color.g}, ${color.b}, 0.55)`,
+  }
+}
+
+function leaderboardUsernameStyle(mod, row) {
+  const appearance = leaderboardAppearance(mod)
+  return {
+    color: appearance.usernameColors[row.id] ?? appearance.defaultUsernameColor,
+  }
+}
+
+function leaderboardNumberStyle(mod, row) {
+  return {
+    color: leaderboardNumberColor(mod, row),
+  }
+}
+
 function sortedLeaderboardRows(mod) {
   const participants = Array.isArray(mod?.participants) ? mod.participants : []
   return [...participants]
@@ -196,14 +297,21 @@ function visibleLeaderboardRows(mod) {
   const neighborCount = Math.max(0, Math.floor(mod?.neighborCount ?? 2))
   const focusRank = sorted.findIndex(participant => participant.id === mod?.focusParticipantId)
   const focusIndex = focusRank >= 0 ? focusRank : 0
+  const focusStart = Math.max(0, focusIndex - neighborCount)
   const selectedIndexes = new Set()
   for (let i = 0; i < Math.min(topCount, sorted.length); i += 1) selectedIndexes.add(i)
   for (let i = Math.max(0, focusIndex - neighborCount); i <= Math.min(sorted.length - 1, focusIndex + neighborCount); i += 1) {
     selectedIndexes.add(i)
   }
-  return [...selectedIndexes]
-    .sort((a, b) => a - b)
-    .map(index => sorted[index])
+  const orderedIndexes = [...selectedIndexes].sort((a, b) => a - b)
+  const topEnd = Math.min(topCount, sorted.length) - 1
+  const dividerIndex = focusStart > topEnd
+    ? orderedIndexes.find(index => index >= focusStart)
+    : null
+  return orderedIndexes.map(index => ({
+    ...sorted[index],
+    showDivider: dividerIndex != null && index === dividerIndex,
+  }))
 }
 
 function formatLeaderboardScore(rawScore, scoreType) {
@@ -253,6 +361,10 @@ function normalizePopupConfig(rawConfig) {
     y: typeof rawConfig?.y === 'number' ? rawConfig.y : 0,
     hiddenVisual: typeof rawConfig?.hiddenVisual === 'boolean' ? rawConfig.hiddenVisual : false,
     defaultPlayMusic: typeof rawConfig?.defaultPlayMusic === 'boolean' ? rawConfig.defaultPlayMusic : true,
+    normalizeVolume: typeof rawConfig?.normalizeVolume === 'boolean' ? rawConfig.normalizeVolume : false,
+    normalizedVolumePct: typeof rawConfig?.normalizedVolumePct === 'number' && Number.isFinite(rawConfig.normalizedVolumePct)
+      ? Math.max(0, Math.min(100, rawConfig.normalizedVolumePct))
+      : 100,
     animation: {
       songStartShowSec: typeof animation.songStartShowSec === 'number' && animation.songStartShowSec >= 0 ? animation.songStartShowSec : 6,
       songEndShowSec: typeof animation.songEndShowSec === 'number' && animation.songEndShowSec >= 0 ? animation.songEndShowSec : 3,
@@ -339,6 +451,9 @@ function syncMusic(snapshot) {
       console.warn('[overlay] Audio playback request failed.', err)
     })
   }
+  audio.volume = popupConfig.value.normalizeVolume
+    ? Math.max(0, Math.min(1, popupConfig.value.normalizedVolumePct / 100))
+    : 1
 
   resetPopupTimers(snapshot)
   if (snapshot.sequence !== previousSequence) {
@@ -518,9 +633,19 @@ onUnmounted(() => {
   background: rgba(255, 255, 255, 0.05);
 }
 
+.leaderboard-row-no-rank {
+  grid-template-columns: 1fr auto;
+}
+
 .leaderboard-row-focus {
   background: rgba(130, 177, 255, 0.2);
   border: 1px solid rgba(130, 177, 255, 0.55);
+}
+
+.leaderboard-row-divider {
+  border-top: 1px solid rgba(255, 255, 255, 0.14);
+  margin-top: 0.35rem;
+  padding-top: 0.45rem;
 }
 
 .leaderboard-rank {

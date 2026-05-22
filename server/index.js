@@ -53,6 +53,8 @@ const DEFAULT_NOW_PLAYING_POPUP = {
   y: 0,
   hiddenVisual: false,
   defaultPlayMusic: true,
+  normalizeVolume: false,
+  normalizedVolumePct: 100,
   animation: {
     songStartShowSec: 6,
     songEndShowSec: 3,
@@ -130,6 +132,49 @@ function patchText(target, patch) {
   }
 }
 
+function sanitizeHexColor(raw, fallback) {
+  if (typeof raw !== 'string') return fallback
+  const normalized = raw.trim().toLowerCase()
+  return /^#[0-9a-f]{6}$/i.test(normalized) ? normalized : fallback
+}
+
+function sanitizeLeaderboardAppearance(raw, fallback = FACTORY_MODULE_DEFAULTS.leaderboard.appearance) {
+  const source = raw && typeof raw === 'object' ? raw : {}
+  const usernameColors = {}
+  if (source.usernameColors && typeof source.usernameColors === 'object' && !Array.isArray(source.usernameColors)) {
+    for (const [participantId, color] of Object.entries(source.usernameColors)) {
+      if (typeof participantId !== 'string' || !participantId.trim()) continue
+      const normalizedColor = sanitizeHexColor(color, '')
+      if (normalizedColor) usernameColors[participantId] = normalizedColor
+    }
+  }
+
+  const uniqueGradientKeys = new Map()
+  if (Array.isArray(source.numberColorKeys)) {
+    for (const item of source.numberColorKeys) {
+      if (!item || typeof item !== 'object') continue
+      const position = Number(item.position)
+      if (!Number.isFinite(position)) continue
+      const color = sanitizeHexColor(item.color, '')
+      if (!color) continue
+      uniqueGradientKeys.set(position, { position, color })
+    }
+  }
+
+  return {
+    showRankNumbers: typeof source.showRankNumbers === 'boolean'
+      ? source.showRankNumbers
+      : !!fallback.showRankNumbers,
+    textColor: sanitizeHexColor(source.textColor, fallback.textColor),
+    defaultUsernameColor: sanitizeHexColor(source.defaultUsernameColor, fallback.defaultUsernameColor),
+    usernameColors,
+    numberColorMode: source.numberColorMode === 'gradient' ? 'gradient' : 'solid',
+    numberColor: sanitizeHexColor(source.numberColor, fallback.numberColor),
+    numberColorKeys: [...uniqueGradientKeys.values()].sort((a, b) => a.position - b.position),
+    focusHighlightColor: sanitizeHexColor(source.focusHighlightColor, fallback.focusHighlightColor),
+  }
+}
+
 function patchLeaderboard(target, patch) {
   if (typeof patch.name === 'string' && patch.name.trim()) target.name = patch.name.trim()
   if (patch.scoreType === 'number' || patch.scoreType === 'time') target.scoreType = patch.scoreType
@@ -158,6 +203,20 @@ function patchLeaderboard(target, patch) {
         score: typeof participant.score === 'number' && Number.isFinite(participant.score) ? participant.score : 0,
       }))
   }
+
+  if (patch.appearance && typeof patch.appearance === 'object') {
+    const merged = {
+      ...(target.appearance ?? FACTORY_MODULE_DEFAULTS.leaderboard.appearance),
+      ...patch.appearance,
+      usernameColors: patch.appearance.usernameColors && typeof patch.appearance.usernameColors === 'object' && !Array.isArray(patch.appearance.usernameColors)
+        ? { ...((target.appearance?.usernameColors ?? {})), ...patch.appearance.usernameColors }
+        : (target.appearance?.usernameColors ?? {}),
+      numberColorKeys: Array.isArray(patch.appearance.numberColorKeys)
+        ? patch.appearance.numberColorKeys
+        : (target.appearance?.numberColorKeys ?? []),
+    }
+    target.appearance = sanitizeLeaderboardAppearance(merged, FACTORY_MODULE_DEFAULTS.leaderboard.appearance)
+  }
 }
 
 function normalizeNowPlayingPopup(savedPopup) {
@@ -169,6 +228,12 @@ function normalizeNowPlayingPopup(savedPopup) {
     defaultPlayMusic: typeof savedPopup?.defaultPlayMusic === 'boolean'
       ? savedPopup.defaultPlayMusic
       : DEFAULT_NOW_PLAYING_POPUP.defaultPlayMusic,
+    normalizeVolume: typeof savedPopup?.normalizeVolume === 'boolean'
+      ? savedPopup.normalizeVolume
+      : DEFAULT_NOW_PLAYING_POPUP.normalizeVolume,
+    normalizedVolumePct: typeof savedPopup?.normalizedVolumePct === 'number' && Number.isFinite(savedPopup.normalizedVolumePct)
+      ? Math.max(0, Math.min(100, savedPopup.normalizedVolumePct))
+      : DEFAULT_NOW_PLAYING_POPUP.normalizedVolumePct,
     animation: {
       songStartShowSec: typeof animation.songStartShowSec === 'number' && animation.songStartShowSec >= 0
         ? animation.songStartShowSec
@@ -204,6 +269,10 @@ function patchNowPlayingPopup(target, patch) {
   if (typeof patch.y === 'number') target.y = patch.y
   if (typeof patch.hiddenVisual === 'boolean') target.hiddenVisual = patch.hiddenVisual
   if (typeof patch.defaultPlayMusic === 'boolean') target.defaultPlayMusic = patch.defaultPlayMusic
+  if (typeof patch.normalizeVolume === 'boolean') target.normalizeVolume = patch.normalizeVolume
+  if (typeof patch.normalizedVolumePct === 'number' && Number.isFinite(patch.normalizedVolumePct)) {
+    target.normalizedVolumePct = Math.max(0, Math.min(100, patch.normalizedVolumePct))
+  }
   if (patch.animation && typeof patch.animation === 'object') {
     if (typeof patch.animation.songStartShowSec === 'number' && patch.animation.songStartShowSec >= 0) {
       target.animation.songStartShowSec = patch.animation.songStartShowSec
@@ -266,6 +335,7 @@ function mergeModuleDefaults(saved) {
         ? Math.floor(l.neighborCount)
         : FACTORY_MODULE_DEFAULTS.leaderboard.neighborCount,
       transform: { ...DEFAULT_LEADERBOARD_TRANSFORM, ...(l.transform ?? {}) },
+      appearance: sanitizeLeaderboardAppearance(l.appearance, FACTORY_MODULE_DEFAULTS.leaderboard.appearance),
       focusParticipantId: typeof l.focusParticipantId === 'string' ? l.focusParticipantId : FACTORY_MODULE_DEFAULTS.leaderboard.focusParticipantId,
       participants: Array.isArray(l.participants) && l.participants.length > 0
         ? l.participants

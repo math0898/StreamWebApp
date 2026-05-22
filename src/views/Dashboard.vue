@@ -68,6 +68,28 @@
         <button class="action-btn" :disabled="!canPause" @click="pauseMusic">Pause</button>
         <button class="action-btn" :disabled="!canResume" @click="resumeMusic">Resume</button>
         <button class="action-btn action-activate" @click="skipMusic">Skip Song</button>
+        <label class="music-inline-option">
+          <input
+            type="checkbox"
+            :checked="popupSettings.normalizeVolume"
+            @change="patchPopupSettings({ normalizeVolume: $event.target.checked })"
+          />
+          Normalize Volume
+        </label>
+        <label class="music-inline-option">
+          Level
+          <input
+            type="number"
+            min="0"
+            max="100"
+            step="1"
+            class="music-inline-number"
+            :disabled="!popupSettings.normalizeVolume"
+            :value="popupSettings.normalizedVolumePct"
+            @change="patchPopupSettings({ normalizedVolumePct: $event.target.valueAsNumber })"
+          />
+          %
+        </label>
       </div>
 
       <p class="music-help">
@@ -411,6 +433,80 @@
                 </option>
               </select>
             </div>
+            <div class="edit-row checkbox-row">
+              <label class="edit-label">Hide Rank Numbers</label>
+              <input
+                type="checkbox"
+                :checked="!leaderboardAppearance(mod).showRankNumbers"
+                @change="patchLeaderboardAppearance(mod, { showRankNumbers: !$event.target.checked })"
+              />
+            </div>
+            <p class="edit-sub">Colors</p>
+            <div class="edit-row">
+              <label class="edit-label">Text</label>
+              <input
+                type="color"
+                :value="leaderboardAppearance(mod).textColor"
+                @input="patchLeaderboardAppearance(mod, { textColor: $event.target.value })"
+              />
+            </div>
+            <div class="edit-row">
+              <label class="edit-label">User Default</label>
+              <input
+                type="color"
+                :value="leaderboardAppearance(mod).defaultUsernameColor"
+                @input="patchLeaderboardAppearance(mod, { defaultUsernameColor: $event.target.value })"
+              />
+            </div>
+            <div class="edit-row">
+              <label class="edit-label">Focus Highlight</label>
+              <input
+                type="color"
+                :value="leaderboardAppearance(mod).focusHighlightColor"
+                @input="patchLeaderboardAppearance(mod, { focusHighlightColor: $event.target.value })"
+              />
+            </div>
+            <div class="edit-row">
+              <label class="edit-label">Number Color</label>
+              <select
+                :value="leaderboardAppearance(mod).numberColorMode"
+                @change="patchLeaderboardAppearance(mod, { numberColorMode: $event.target.value })"
+              >
+                <option value="solid">Solid</option>
+                <option value="gradient">Gradient</option>
+              </select>
+            </div>
+            <div v-if="leaderboardAppearance(mod).numberColorMode === 'solid'" class="edit-row">
+              <label class="edit-label">Number Solid</label>
+              <input
+                type="color"
+                :value="leaderboardAppearance(mod).numberColor"
+                @input="patchLeaderboardAppearance(mod, { numberColor: $event.target.value })"
+              />
+            </div>
+            <template v-else>
+              <div
+                v-for="(keyValue, keyIdx) in leaderboardAppearance(mod).numberColorKeys"
+                :key="`${mod.id}-num-key-${keyIdx}`"
+                class="leaderboard-keyvalue-row"
+              >
+                <label class="edit-label">Key {{ keyIdx + 1 }}</label>
+                <input
+                  type="number"
+                  step="1"
+                  class="participant-score-input"
+                  :value="keyValue.position"
+                  @change="setLeaderboardNumberColorKey(mod, keyIdx, { position: $event.target.valueAsNumber })"
+                />
+                <input
+                  type="color"
+                  :value="keyValue.color"
+                  @input="setLeaderboardNumberColorKey(mod, keyIdx, { color: $event.target.value })"
+                />
+                <button class="action-btn action-delete" @click="removeLeaderboardNumberColorKey(mod, keyIdx)">✕</button>
+              </div>
+              <button class="counter-btn-sm" @click="addLeaderboardNumberColorKey(mod)">+ Add Number Key</button>
+            </template>
             <p class="edit-sub">Transform</p>
             <div v-for="f in transformFields" :key="mod.id+'l'+f.key" class="edit-row">
               <label class="edit-label">{{ f.label }}</label>
@@ -425,6 +521,17 @@
               <button class="counter-btn-sm" :class="{ 'participant-focus-btn': participant.id === mod.focusParticipantId }" @click="patchMod(mod.id, { focusParticipantId: participant.id })">Focus</button>
               <input type="text" class="wide-input" :value="participant.username" @change="updateLeaderboardParticipant(mod, participant.id, { username: $event.target.value })" />
               <input type="number" step="0.001" class="participant-score-input" :value="participant.score" @change="updateLeaderboardParticipant(mod, participant.id, { score: $event.target.valueAsNumber })" />
+              <input
+                type="color"
+                :value="leaderboardUsernameColor(mod, participant.id)"
+                @input="setLeaderboardUsernameColor(mod, participant.id, $event.target.value)"
+              />
+              <button
+                v-if="hasLeaderboardUsernameColor(mod, participant.id)"
+                class="action-btn"
+                @click="clearLeaderboardUsernameColor(mod, participant.id)"
+              >Default</button>
+              <span v-else class="participant-default-pill">Default</span>
               <button v-if="(mod.participants?.length ?? 0) > 1" class="action-btn action-delete" @click="removeLeaderboardParticipant(mod, participant.id)">✕</button>
               <span class="participant-rank">#{{ index + 1 }}</span>
             </div>
@@ -473,6 +580,8 @@ const popupSettings = reactive({
   y: 0,
   hiddenVisual: false,
   defaultPlayMusic: true,
+  normalizeVolume: false,
+  normalizedVolumePct: 100,
   animation: {
     songStartShowSec: 6,
     songEndShowSec: 3,
@@ -557,6 +666,10 @@ function applyPopupSettings(nextSettings) {
   popupSettings.y = nextSettings?.y ?? 0
   popupSettings.hiddenVisual = !!nextSettings?.hiddenVisual
   popupSettings.defaultPlayMusic = typeof nextSettings?.defaultPlayMusic === 'boolean' ? nextSettings.defaultPlayMusic : true
+  popupSettings.normalizeVolume = typeof nextSettings?.normalizeVolume === 'boolean' ? nextSettings.normalizeVolume : false
+  popupSettings.normalizedVolumePct = Number.isFinite(nextSettings?.normalizedVolumePct)
+    ? Math.max(0, Math.min(100, nextSettings.normalizedVolumePct))
+    : 100
   popupSettings.animation.songStartShowSec = nextSettings?.animation?.songStartShowSec ?? 6
   popupSettings.animation.songEndShowSec = nextSettings?.animation?.songEndShowSec ?? 3
   popupSettings.animation.periodicIntervalSec = nextSettings?.animation?.periodicIntervalSec ?? 45
@@ -794,6 +907,43 @@ function sortedLeaderboardParticipants(mod) {
   return [...participants].sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
 }
 
+function leaderboardAppearance(mod) {
+  const source = mod?.appearance ?? {}
+  const usernameColors = source.usernameColors && typeof source.usernameColors === 'object' && !Array.isArray(source.usernameColors)
+    ? source.usernameColors
+    : {}
+  const numberColorKeys = Array.isArray(source.numberColorKeys)
+    ? source.numberColorKeys
+      .map(item => ({ position: Number(item?.position), color: item?.color }))
+      .filter(item => Number.isFinite(item.position) && typeof item.color === 'string' && /^#[0-9a-f]{6}$/i.test(item.color))
+      .sort((a, b) => a.position - b.position)
+    : []
+
+  return {
+    showRankNumbers: source.showRankNumbers !== false,
+    textColor: typeof source.textColor === 'string' && /^#[0-9a-f]{6}$/i.test(source.textColor) ? source.textColor : '#ffffff',
+    defaultUsernameColor: typeof source.defaultUsernameColor === 'string' && /^#[0-9a-f]{6}$/i.test(source.defaultUsernameColor) ? source.defaultUsernameColor : '#ffffff',
+    usernameColors,
+    numberColorMode: source.numberColorMode === 'gradient' ? 'gradient' : 'solid',
+    numberColor: typeof source.numberColor === 'string' && /^#[0-9a-f]{6}$/i.test(source.numberColor) ? source.numberColor : '#82b1ff',
+    numberColorKeys,
+    focusHighlightColor: typeof source.focusHighlightColor === 'string' && /^#[0-9a-f]{6}$/i.test(source.focusHighlightColor) ? source.focusHighlightColor : '#82b1ff',
+  }
+}
+
+function patchLeaderboardAppearance(mod, patch) {
+  const current = leaderboardAppearance(mod)
+  const next = {
+    ...current,
+    ...patch,
+    usernameColors: patch.usernameColors && typeof patch.usernameColors === 'object' && !Array.isArray(patch.usernameColors)
+      ? patch.usernameColors
+      : current.usernameColors,
+    numberColorKeys: Array.isArray(patch.numberColorKeys) ? patch.numberColorKeys : current.numberColorKeys,
+  }
+  patchMod(mod.id, { appearance: next })
+}
+
 function leaderboardFocusSnapshot(mod) {
   const sorted = sortedLeaderboardParticipants(mod)
   const focusId = mod?.focusParticipantId
@@ -828,6 +978,53 @@ function formatLeaderboardScore(rawScore, scoreType) {
   else units = [`${ms}ms`]
   units = units.filter((unit, index) => index === 0 || !unit.startsWith('0'))
   return `${negative ? '-' : ''}${units.join(' ')}`
+}
+
+function leaderboardUsernameColor(mod, participantId) {
+  const appearance = leaderboardAppearance(mod)
+  return appearance.usernameColors[participantId] ?? appearance.defaultUsernameColor
+}
+
+function hasLeaderboardUsernameColor(mod, participantId) {
+  return Object.prototype.hasOwnProperty.call(leaderboardAppearance(mod).usernameColors, participantId)
+}
+
+function setLeaderboardUsernameColor(mod, participantId, color) {
+  const appearance = leaderboardAppearance(mod)
+  patchLeaderboardAppearance(mod, {
+    usernameColors: {
+      ...appearance.usernameColors,
+      [participantId]: color,
+    },
+  })
+}
+
+function clearLeaderboardUsernameColor(mod, participantId) {
+  const appearance = leaderboardAppearance(mod)
+  const next = { ...appearance.usernameColors }
+  delete next[participantId]
+  patchLeaderboardAppearance(mod, { usernameColors: next })
+}
+
+function addLeaderboardNumberColorKey(mod) {
+  const appearance = leaderboardAppearance(mod)
+  const nextPosition = (appearance.numberColorKeys[appearance.numberColorKeys.length - 1]?.position ?? 0) + 1
+  patchLeaderboardAppearance(mod, {
+    numberColorKeys: [...appearance.numberColorKeys, { position: nextPosition, color: '#82b1ff' }],
+  })
+}
+
+function setLeaderboardNumberColorKey(mod, keyIdx, patch) {
+  const appearance = leaderboardAppearance(mod)
+  const next = appearance.numberColorKeys.map((item, idx) => (idx === keyIdx ? { ...item, ...patch } : item))
+  patchLeaderboardAppearance(mod, { numberColorKeys: next })
+}
+
+function removeLeaderboardNumberColorKey(mod, keyIdx) {
+  const appearance = leaderboardAppearance(mod)
+  patchLeaderboardAppearance(mod, {
+    numberColorKeys: appearance.numberColorKeys.filter((_, idx) => idx !== keyIdx),
+  })
 }
 
 function leaderboardDefaultStep(mod) {
@@ -899,6 +1096,10 @@ async function patchPopupSettings(patch) {
   if (typeof patch.y === 'number' && Number.isFinite(patch.y)) popupSettings.y = patch.y
   if (typeof patch.hiddenVisual === 'boolean') popupSettings.hiddenVisual = patch.hiddenVisual
   if (typeof patch.defaultPlayMusic === 'boolean') popupSettings.defaultPlayMusic = patch.defaultPlayMusic
+  if (typeof patch.normalizeVolume === 'boolean') popupSettings.normalizeVolume = patch.normalizeVolume
+  if (typeof patch.normalizedVolumePct === 'number' && Number.isFinite(patch.normalizedVolumePct)) {
+    popupSettings.normalizedVolumePct = Math.max(0, Math.min(100, patch.normalizedVolumePct))
+  }
   if (patch.animation && typeof patch.animation === 'object') {
     if (typeof patch.animation.songStartShowSec === 'number' && Number.isFinite(patch.animation.songStartShowSec)) {
       popupSettings.animation.songStartShowSec = patch.animation.songStartShowSec
@@ -1100,8 +1301,32 @@ h1 {
 
 .music-controls {
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   gap: 0.45rem;
   margin-bottom: 0.55rem;
+}
+
+.music-inline-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.75rem;
+  color: #bdbdbd;
+}
+
+.music-inline-number {
+  width: 4rem;
+  background-color: #1e1e1e;
+  color: #e0e0e0;
+  border: 1px solid #424242;
+  border-radius: 6px;
+  padding: 0.22rem 0.35rem;
+  font-size: 0.8rem;
+}
+
+.music-inline-number:disabled {
+  opacity: 0.45;
 }
 
 .music-controls .action-btn:disabled {
@@ -1367,7 +1592,15 @@ h1 {
 
 .leaderboard-participant-row {
   display: grid;
-  grid-template-columns: auto 1fr 5.6rem auto auto;
+  grid-template-columns: auto 1fr 5.6rem auto auto auto auto;
+  gap: 0.4rem;
+  align-items: center;
+  margin-bottom: 0.4rem;
+}
+
+.leaderboard-keyvalue-row {
+  display: grid;
+  grid-template-columns: 4.5rem 1fr auto auto;
   gap: 0.4rem;
   align-items: center;
   margin-bottom: 0.4rem;
@@ -1380,6 +1613,11 @@ h1 {
 
 .participant-rank {
   font-size: 0.75rem;
+  color: #757575;
+}
+
+.participant-default-pill {
+  font-size: 0.7rem;
   color: #757575;
 }
 

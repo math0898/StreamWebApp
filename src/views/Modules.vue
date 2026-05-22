@@ -159,6 +159,16 @@ const factoryDefaults = {
     topCount: 3,
     neighborCount: 2,
     transform: { x: 0, y: 0, scaleX: 1, scaleY: 1 },
+    appearance: {
+      showRankNumbers: true,
+      textColor: '#ffffff',
+      defaultUsernameColor: '#ffffff',
+      usernameColors: {},
+      numberColorMode: 'solid',
+      numberColor: '#82b1ff',
+      numberColorKeys: [],
+      focusHighlightColor: '#82b1ff',
+    },
     focusParticipantId: 'streamer',
     participants: [
       { id: 'streamer', username: 'Streamer', score: 50 },
