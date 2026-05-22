@@ -237,6 +237,24 @@
           </div>
         </div>
 
+        <div v-else-if="mod.type === 'leaderboard'" class="leaderboard-section">
+          <p class="leaderboard-rank">
+            #{{ leaderboardFocusSnapshot(mod).rank }} / {{ leaderboardFocusSnapshot(mod).total }}
+          </p>
+          <p class="leaderboard-name">{{ leaderboardFocusSnapshot(mod).participant?.username ?? 'No User' }}</p>
+          <p class="leaderboard-score">{{ leaderboardFocusSnapshot(mod).formattedScore }}</p>
+          <div class="counter-row">
+            <button class="counter-btn" @click="adjustLeaderboardScore(mod, -1)">−</button>
+            <input type="number" class="step-input" :value="steps[mod.id] ?? leaderboardDefaultStep(mod)" @change="setStepLocal(mod.id, $event.target.value)" title="Step size" />
+            <button class="counter-btn" @click="adjustLeaderboardScore(mod, +1)">+</button>
+          </div>
+          <div class="counter-row">
+            <input type="number" class="set-input" :placeholder="mod.scoreType === 'time' ? 'Set ms…' : 'Set value…'" :value="setVals[mod.id] ?? ''" @input="updateSetVal(mod.id, $event.target.value)" @keyup.enter="setLeaderboardScore(mod)" />
+            <button class="counter-btn-sm" @click="setLeaderboardScore(mod)">Set</button>
+            <button class="counter-btn-sm reset" @click="setLeaderboardScore(mod, 0)">Reset</button>
+          </div>
+        </div>
+
         <!-- Edit panel (all types) -->
         <div v-if="editOpen[mod.id]" class="edit-panel">
 
@@ -365,6 +383,54 @@
             </div>
           </template>
 
+          <template v-else-if="mod.type === 'leaderboard'">
+            <div class="edit-row">
+              <label class="edit-label">Title</label>
+              <input type="text" class="wide-input" :value="mod.name" @change="patchMod(mod.id, { name: $event.target.value })" />
+            </div>
+            <div class="edit-row">
+              <label class="edit-label">Score Type</label>
+              <select :value="mod.scoreType" @change="patchMod(mod.id, { scoreType: $event.target.value })">
+                <option value="number">Number</option>
+                <option value="time">Time (ms)</option>
+              </select>
+            </div>
+            <div class="edit-row">
+              <label class="edit-label">Top Rows</label>
+              <input type="number" min="1" :value="mod.topCount" @change="patchMod(mod.id, { topCount: $event.target.valueAsNumber })" />
+            </div>
+            <div class="edit-row">
+              <label class="edit-label">Neighbor Rows</label>
+              <input type="number" min="0" :value="mod.neighborCount" @change="patchMod(mod.id, { neighborCount: $event.target.valueAsNumber })" />
+            </div>
+            <div class="edit-row">
+              <label class="edit-label">Focus User</label>
+              <select :value="mod.focusParticipantId" @change="patchMod(mod.id, { focusParticipantId: $event.target.value })">
+                <option v-for="participant in sortedLeaderboardParticipants(mod)" :key="mod.id + '-focus-' + participant.id" :value="participant.id">
+                  {{ participant.username }}
+                </option>
+              </select>
+            </div>
+            <p class="edit-sub">Transform</p>
+            <div v-for="f in transformFields" :key="mod.id+'l'+f.key" class="edit-row">
+              <label class="edit-label">{{ f.label }}</label>
+              <input type="number" :step="f.step" :value="mod.transform?.[f.key] ?? (f.key.startsWith('scale') ? 1 : 0)" @change="patchMod(mod.id, { transform: { [f.key]: $event.target.valueAsNumber } })" />
+            </div>
+            <p class="edit-sub">Participants</p>
+            <div
+              v-for="(participant, index) in (mod.participants ?? [])"
+              :key="mod.id + '-participant-' + participant.id"
+              class="leaderboard-participant-row"
+            >
+              <button class="counter-btn-sm" :class="{ 'participant-focus-btn': participant.id === mod.focusParticipantId }" @click="patchMod(mod.id, { focusParticipantId: participant.id })">Focus</button>
+              <input type="text" class="wide-input" :value="participant.username" @change="updateLeaderboardParticipant(mod, participant.id, { username: $event.target.value })" />
+              <input type="number" step="0.001" class="participant-score-input" :value="participant.score" @change="updateLeaderboardParticipant(mod, participant.id, { score: $event.target.valueAsNumber })" />
+              <button v-if="(mod.participants?.length ?? 0) > 1" class="action-btn action-delete" @click="removeLeaderboardParticipant(mod, participant.id)">✕</button>
+              <span class="participant-rank">#{{ index + 1 }}</span>
+            </div>
+            <button class="counter-btn-sm" @click="addLeaderboardParticipant(mod)">+ Add Participant</button>
+          </template>
+
         </div>
       </div>
     </div>
@@ -375,6 +441,7 @@
         <option value="image">Image</option>
         <option value="text">Text</option>
         <option value="dj">DJ</option>
+        <option value="leaderboard">Leaderboard</option>
       </select>
       <button class="add-module-btn" @click="addModule">+ Add Module</button>
     </div>
@@ -458,6 +525,7 @@ function moduleTitle(mod) {
   if (mod.type === 'image') return mod.name?.trim() || 'Image Module'
   if (mod.type === 'text') return mod.name?.trim() || 'Text Module'
   if (mod.type === 'dj') return mod.name?.trim() || 'DJ Module'
+  if (mod.type === 'leaderboard') return mod.name?.trim() || 'Leaderboard Module'
   return mod.label || 'ProgressBar Module'
 }
 
@@ -478,7 +546,7 @@ function applyModules(newModules) {
   for (const key of Object.keys(steps)) delete steps[key]
   for (const key of Object.keys(setVals)) delete setVals[key]
   for (const mod of newModules) {
-    steps[mod.id] = 1
+    steps[mod.id] = mod.type === 'leaderboard' && mod.scoreType === 'time' ? 1000 : 1
     setVals[mod.id] = ''
     if (editOpen[mod.id] === undefined) editOpen[mod.id] = false
   }
@@ -719,6 +787,111 @@ function setStepLocal(modId, raw) {
 
 function updateSetVal(modId, val) {
   setVals[modId] = val
+}
+
+function sortedLeaderboardParticipants(mod) {
+  const participants = Array.isArray(mod?.participants) ? mod.participants : []
+  return [...participants].sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
+}
+
+function leaderboardFocusSnapshot(mod) {
+  const sorted = sortedLeaderboardParticipants(mod)
+  const focusId = mod?.focusParticipantId
+  const rankIndex = Math.max(0, sorted.findIndex(participant => participant.id === focusId))
+  const participant = sorted[rankIndex] ?? null
+  return {
+    participant,
+    rank: sorted.length === 0 ? 0 : rankIndex + 1,
+    total: sorted.length,
+    formattedScore: formatLeaderboardScore(participant?.score ?? 0, mod?.scoreType),
+  }
+}
+
+function formatLeaderboardScore(rawScore, scoreType) {
+  const score = typeof rawScore === 'number' && Number.isFinite(rawScore) ? rawScore : 0
+  if (scoreType !== 'time') return Number.isInteger(score) ? String(score) : score.toFixed(3).replace(/\.?0+$/, '')
+  const negative = score < 0
+  let rest = Math.abs(score)
+  const ms = Math.floor(rest % 1000)
+  rest = Math.floor(rest / 1000)
+  const seconds = rest % 60
+  rest = Math.floor(rest / 60)
+  const minutes = rest % 60
+  rest = Math.floor(rest / 60)
+  const hours = rest % 24
+  const days = Math.floor(rest / 24)
+  let units = []
+  if (days > 0) units = [`${days}d`, `${hours}h`, `${minutes}m`]
+  else if (hours > 0) units = [`${hours}h`, `${minutes}m`, `${seconds}s`]
+  else if (minutes > 0) units = [`${minutes}m`, `${seconds}s`]
+  else if (seconds > 0) units = [`${seconds}s`, `${ms}ms`]
+  else units = [`${ms}ms`]
+  units = units.filter((unit, index) => index === 0 || !unit.startsWith('0'))
+  return `${negative ? '-' : ''}${units.join(' ')}`
+}
+
+function leaderboardDefaultStep(mod) {
+  return mod?.scoreType === 'time' ? 1000 : 1
+}
+
+function patchLeaderboardParticipants(mod, participants, extraPatch = {}) {
+  patchMod(mod.id, { ...extraPatch, participants })
+}
+
+function adjustLeaderboardScore(mod, direction) {
+  const snapshot = leaderboardFocusSnapshot(mod)
+  const participant = snapshot.participant
+  if (!participant) return
+  const step = steps[mod.id] ?? leaderboardDefaultStep(mod)
+  const participants = (mod.participants ?? []).map(item =>
+    item.id === participant.id ? { ...item, score: (item.score ?? 0) + direction * step } : item
+  )
+  patchLeaderboardParticipants(mod, participants)
+}
+
+function setLeaderboardScore(mod, forceValue = null) {
+  const snapshot = leaderboardFocusSnapshot(mod)
+  const participant = snapshot.participant
+  if (!participant) return
+  const value = forceValue === null ? Number(setVals[mod.id]) : forceValue
+  if (!Number.isFinite(value)) return
+  setVals[mod.id] = ''
+  const participants = (mod.participants ?? []).map(item =>
+    item.id === participant.id ? { ...item, score: value } : item
+  )
+  patchLeaderboardParticipants(mod, participants)
+}
+
+function updateLeaderboardParticipant(mod, participantId, patch) {
+  const participants = (mod.participants ?? []).map((participant, idx) => {
+    if (participant.id !== participantId) return participant
+    const username = typeof patch.username === 'string'
+      ? (patch.username.trim() || `Player ${idx + 1}`)
+      : participant.username
+    const score = typeof patch.score === 'number' && Number.isFinite(patch.score) ? patch.score : participant.score
+    return { ...participant, username, score }
+  })
+  patchLeaderboardParticipants(mod, participants)
+}
+
+function addLeaderboardParticipant(mod) {
+  const participants = Array.isArray(mod.participants) ? [...mod.participants] : []
+  participants.push({
+    id: `participant-${Math.random().toString(36).slice(2, 10)}`,
+    username: `Player ${participants.length + 1}`,
+    score: 0,
+  })
+  const focusParticipantId = mod.focusParticipantId || participants[0]?.id || ''
+  patchLeaderboardParticipants(mod, participants, { focusParticipantId })
+}
+
+function removeLeaderboardParticipant(mod, participantId) {
+  const participants = (mod.participants ?? []).filter(participant => participant.id !== participantId)
+  if (participants.length === 0) return
+  const focusParticipantId = participants.some(participant => participant.id === mod.focusParticipantId)
+    ? mod.focusParticipantId
+    : participants[0].id
+  patchLeaderboardParticipants(mod, participants, { focusParticipantId })
 }
 
 async function patchPopupSettings(patch) {
@@ -1040,6 +1213,36 @@ h1 {
   gap: 0.45rem;
 }
 
+.leaderboard-section {
+  padding: 0.7rem 0 0.3rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.leaderboard-rank {
+  margin: 0;
+  font-size: 0.75rem;
+  color: #9e9e9e;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.leaderboard-name {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #e0e0e0;
+}
+
+.leaderboard-score {
+  margin: 0 0 0.15rem;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #82b1ff;
+}
+
 .count {
   font-size: 3rem;
   font-weight: bold;
@@ -1160,6 +1363,30 @@ h1 {
   color: #616161;
   margin: 0 0 0.4rem;
   font-style: italic;
+}
+
+.leaderboard-participant-row {
+  display: grid;
+  grid-template-columns: auto 1fr 5.6rem auto auto;
+  gap: 0.4rem;
+  align-items: center;
+  margin-bottom: 0.4rem;
+}
+
+.participant-score-input {
+  width: 100%;
+  min-width: 0;
+}
+
+.participant-rank {
+  font-size: 0.75rem;
+  color: #757575;
+}
+
+.participant-focus-btn {
+  color: #82b1ff;
+  border-color: #2a4070;
+  background: #141e33;
 }
 
 /* ── Add module row ──────────────────────────────────── */

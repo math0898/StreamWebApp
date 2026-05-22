@@ -87,6 +87,45 @@
       </div>
     </section>
 
+    <section class="section">
+      <h2 class="section-title">Leaderboard Module Defaults</h2>
+      <p class="hint-inline">Applied when adding a new Leaderboard module.</p>
+
+      <div class="row">
+        <label class="field-label">Title</label>
+        <input type="text" class="wide-input" :value="defaults.leaderboard.name" @change="patch('leaderboard', { name: $event.target.value })" />
+      </div>
+
+      <div class="row">
+        <label class="field-label">Score Type</label>
+        <select :value="defaults.leaderboard.scoreType" @change="patch('leaderboard', { scoreType: $event.target.value })">
+          <option value="number">Number</option>
+          <option value="time">Time (ms)</option>
+        </select>
+      </div>
+
+      <div class="row">
+        <label class="field-label">Top Rows</label>
+        <input type="number" min="1" :value="defaults.leaderboard.topCount" @change="patch('leaderboard', { topCount: $event.target.valueAsNumber })" />
+      </div>
+
+      <div class="row">
+        <label class="field-label">Neighbor Rows</label>
+        <input type="number" min="0" :value="defaults.leaderboard.neighborCount" @change="patch('leaderboard', { neighborCount: $event.target.valueAsNumber })" />
+      </div>
+
+      <div class="row">
+        <label class="field-label">Focus User ID</label>
+        <input type="text" class="wide-input" :value="defaults.leaderboard.focusParticipantId" @change="patch('leaderboard', { focusParticipantId: $event.target.value })" />
+      </div>
+
+      <p class="sub-title">Transform</p>
+      <div v-for="f in leaderboardTransformFields" :key="'lb'+f.key" class="row">
+        <label class="field-label">{{ f.label }}</label>
+        <input type="number" :step="f.step" :value="defaults.leaderboard.transform[f.key]" @change="patch('leaderboard', { transform: { [f.key]: $event.target.valueAsNumber } })" />
+      </div>
+    </section>
+
     <button class="reset-factory-btn" @click="resetFactory">Reset All to Factory Defaults</button>
   </div>
 </template>
@@ -113,6 +152,20 @@ const factoryDefaults = {
     text: 'Sample text',
     color: '#ffffff',
     transform: { x: 0, y: 0, scaleX: 1, scaleY: 1, fontSize: 32 },
+  },
+  leaderboard: {
+    name: 'Leaderboard',
+    scoreType: 'number',
+    topCount: 3,
+    neighborCount: 2,
+    transform: { x: 0, y: 0, scaleX: 1, scaleY: 1 },
+    focusParticipantId: 'streamer',
+    participants: [
+      { id: 'streamer', username: 'Streamer', score: 50 },
+      { id: 'challenger-1', username: 'Rival One', score: 65 },
+      { id: 'challenger-2', username: 'Rival Two', score: 42 },
+      { id: 'challenger-3', username: 'Rival Three', score: 31 },
+    ],
   },
 }
 
@@ -146,6 +199,12 @@ const textTransformFields = [
   { key: 'scaleX',   label: 'Scale X',   step: 0.1 },
   { key: 'scaleY',   label: 'Scale Y',   step: 0.1 },
   { key: 'fontSize', label: 'Font Size', step: 1 },
+]
+const leaderboardTransformFields = [
+  { key: 'x',      label: 'X Offset', step: 1 },
+  { key: 'y',      label: 'Y Offset', step: 1 },
+  { key: 'scaleX', label: 'Scale X',  step: 0.1 },
+  { key: 'scaleY', label: 'Scale Y',  step: 0.1 },
 ]
 
 function mergeInto(target, source) {

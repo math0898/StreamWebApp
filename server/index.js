@@ -12,6 +12,7 @@ import {
   DEFAULT_VALUE,
   DEFAULT_IMAGE_TRANSFORM,
   DEFAULT_TEXT_TRANSFORM,
+  DEFAULT_LEADERBOARD_TRANSFORM,
   mergeModule as mergeOverlayModule,
   newModule as createModule,
   patchModule as patchOverlayModule,
@@ -129,6 +130,36 @@ function patchText(target, patch) {
   }
 }
 
+function patchLeaderboard(target, patch) {
+  if (typeof patch.name === 'string' && patch.name.trim()) target.name = patch.name.trim()
+  if (patch.scoreType === 'number' || patch.scoreType === 'time') target.scoreType = patch.scoreType
+  if (typeof patch.topCount === 'number' && patch.topCount >= 1) target.topCount = Math.floor(patch.topCount)
+  if (typeof patch.neighborCount === 'number' && patch.neighborCount >= 0) target.neighborCount = Math.floor(patch.neighborCount)
+  if (typeof patch.focusParticipantId === 'string') target.focusParticipantId = patch.focusParticipantId
+
+  if (patch.transform && typeof patch.transform === 'object') {
+    const { x, y, scaleX, scaleY } = patch.transform
+    if (typeof x === 'number') target.transform.x = x
+    if (typeof y === 'number') target.transform.y = y
+    if (typeof scaleX === 'number') target.transform.scaleX = scaleX
+    if (typeof scaleY === 'number') target.transform.scaleY = scaleY
+  }
+
+  if (Array.isArray(patch.participants)) {
+    target.participants = patch.participants
+      .filter(participant => participant && typeof participant === 'object')
+      .map((participant, idx) => ({
+        id: typeof participant.id === 'string' && participant.id.trim()
+          ? participant.id.trim()
+          : `participant-${idx + 1}`,
+        username: typeof participant.username === 'string' && participant.username.trim()
+          ? participant.username.trim()
+          : `Player ${idx + 1}`,
+        score: typeof participant.score === 'number' && Number.isFinite(participant.score) ? participant.score : 0,
+      }))
+  }
+}
+
 function normalizeNowPlayingPopup(savedPopup) {
   const animation = savedPopup?.animation ?? {}
   return {
@@ -205,6 +236,7 @@ function mergeModuleDefaults(saved) {
   const p = saved?.progressBar ?? {}
   const i = saved?.image ?? {}
   const t = saved?.text ?? {}
+  const l = saved?.leaderboard ?? {}
 
   return {
     progressBar: {
@@ -225,6 +257,29 @@ function mergeModuleDefaults(saved) {
       text:      typeof t.text === 'string' ? t.text : FACTORY_MODULE_DEFAULTS.text.text,
       color:     typeof t.color === 'string' ? t.color : FACTORY_MODULE_DEFAULTS.text.color,
       transform: { ...DEFAULT_TEXT_TRANSFORM, ...(t.transform ?? {}) },
+    },
+    leaderboard: {
+      name: typeof l.name === 'string' && l.name.trim() ? l.name.trim() : FACTORY_MODULE_DEFAULTS.leaderboard.name,
+      scoreType: l.scoreType === 'time' ? 'time' : 'number',
+      topCount: typeof l.topCount === 'number' && l.topCount >= 1 ? Math.floor(l.topCount) : FACTORY_MODULE_DEFAULTS.leaderboard.topCount,
+      neighborCount: typeof l.neighborCount === 'number' && l.neighborCount >= 0
+        ? Math.floor(l.neighborCount)
+        : FACTORY_MODULE_DEFAULTS.leaderboard.neighborCount,
+      transform: { ...DEFAULT_LEADERBOARD_TRANSFORM, ...(l.transform ?? {}) },
+      focusParticipantId: typeof l.focusParticipantId === 'string' ? l.focusParticipantId : FACTORY_MODULE_DEFAULTS.leaderboard.focusParticipantId,
+      participants: Array.isArray(l.participants) && l.participants.length > 0
+        ? l.participants
+          .filter(participant => participant && typeof participant === 'object')
+          .map((participant, idx) => ({
+            id: typeof participant.id === 'string' && participant.id.trim()
+              ? participant.id.trim()
+              : `participant-${idx + 1}`,
+            username: typeof participant.username === 'string' && participant.username.trim()
+              ? participant.username.trim()
+              : `Player ${idx + 1}`,
+            score: typeof participant.score === 'number' && Number.isFinite(participant.score) ? participant.score : 0,
+          }))
+        : FACTORY_MODULE_DEFAULTS.leaderboard.participants.map(participant => ({ ...participant })),
     },
   }
 }
@@ -1082,6 +1137,9 @@ function patchDefaults(body) {
   }
   if (body.text && typeof body.text === 'object') {
     patchText(state.moduleDefaults.text, body.text)
+  }
+  if (body.leaderboard && typeof body.leaderboard === 'object') {
+    patchLeaderboard(state.moduleDefaults.leaderboard, body.leaderboard)
   }
 }
 

@@ -3,8 +3,9 @@ export const DEFAULT_TITLE = { x: 0, y: 0, fontSize: 16 }
 export const DEFAULT_VALUE = { x: 0, y: 0, fontSize: 14 }
 export const DEFAULT_IMAGE_TRANSFORM = { x: 0, y: 0, scaleX: 1, scaleY: 1 }
 export const DEFAULT_TEXT_TRANSFORM = { x: 0, y: 0, scaleX: 1, scaleY: 1, fontSize: 32 }
+export const DEFAULT_LEADERBOARD_TRANSFORM = { x: 0, y: 0, scaleX: 1, scaleY: 1 }
 
-export const MODULE_TYPES = new Set(['progressBar', 'image', 'text', 'dj'])
+export const MODULE_TYPES = new Set(['progressBar', 'image', 'text', 'dj', 'leaderboard'])
 
 export const FACTORY_MODULE_DEFAULTS = {
   progressBar: {
@@ -34,6 +35,20 @@ export const FACTORY_MODULE_DEFAULTS = {
     moodWindow: 5,
     targetStyles: [],
     targetAttributes: {},
+  },
+  leaderboard: {
+    name: 'Leaderboard',
+    scoreType: 'number',
+    topCount: 3,
+    neighborCount: 2,
+    transform: { ...DEFAULT_LEADERBOARD_TRANSFORM },
+    focusParticipantId: 'streamer',
+    participants: [
+      { id: 'streamer', username: 'Streamer', score: 50 },
+      { id: 'challenger-1', username: 'Rival One', score: 65 },
+      { id: 'challenger-2', username: 'Rival Two', score: 42 },
+      { id: 'challenger-3', username: 'Rival Three', score: 31 },
+    ],
   },
 }
 
@@ -244,10 +259,82 @@ class DJModule extends AbstractModule {
   }
 }
 
+function sanitizeParticipant(raw, newId, idx = 0) {
+  const fallback = `Player ${idx + 1}`
+  const generatedId = typeof newId === 'function' ? newId() : ''
+  return {
+    id: typeof raw?.id === 'string' && raw.id.trim() ? raw.id.trim() : (generatedId || `participant-${idx + 1}`),
+    username: typeof raw?.username === 'string' && raw.username.trim() ? raw.username.trim() : fallback,
+    score: typeof raw?.score === 'number' && Number.isFinite(raw.score) ? raw.score : 0,
+  }
+}
+
+class LeaderboardModule extends AbstractModule {
+  constructor(saved, newId) {
+    super(saved, newId, 'leaderboard')
+    const d = FACTORY_MODULE_DEFAULTS.leaderboard
+    this.name = typeof saved?.name === 'string' && saved.name.trim() ? saved.name : d.name
+    this.scoreType = saved?.scoreType === 'time' ? 'time' : 'number'
+    this.topCount = typeof saved?.topCount === 'number' && saved.topCount >= 1 ? Math.floor(saved.topCount) : d.topCount
+    this.neighborCount = typeof saved?.neighborCount === 'number' && saved.neighborCount >= 0
+      ? Math.floor(saved.neighborCount)
+      : d.neighborCount
+    this.transform = { ...DEFAULT_LEADERBOARD_TRANSFORM, ...(saved?.transform ?? {}) }
+    this.focusParticipantId = typeof saved?.focusParticipantId === 'string' ? saved.focusParticipantId : d.focusParticipantId
+    this.participants = []
+    this.patch(saved ?? {}, newId)
+  }
+
+  patch(patch, newId = () => this.id) {
+    this.patchShared(patch)
+    if (typeof patch?.name === 'string' && patch.name.trim()) this.name = patch.name.trim()
+    if (patch?.scoreType === 'time' || patch?.scoreType === 'number') this.scoreType = patch.scoreType
+    if (typeof patch?.topCount === 'number' && patch.topCount >= 1) this.topCount = Math.floor(patch.topCount)
+    if (typeof patch?.neighborCount === 'number' && patch.neighborCount >= 0) this.neighborCount = Math.floor(patch.neighborCount)
+    if (typeof patch?.focusParticipantId === 'string') this.focusParticipantId = patch.focusParticipantId
+
+    if (patch?.transform && typeof patch.transform === 'object') {
+      const { x, y, scaleX, scaleY } = patch.transform
+      if (typeof x === 'number') this.transform.x = x
+      if (typeof y === 'number') this.transform.y = y
+      if (typeof scaleX === 'number') this.transform.scaleX = scaleX
+      if (typeof scaleY === 'number') this.transform.scaleY = scaleY
+    }
+
+    if (Array.isArray(patch?.participants)) {
+      this.participants = patch.participants.map((participant, idx) => sanitizeParticipant(participant, newId, idx))
+    } else if (this.participants.length === 0) {
+      this.participants = FACTORY_MODULE_DEFAULTS.leaderboard.participants.map((participant, idx) =>
+        sanitizeParticipant(participant, newId, idx)
+      )
+    }
+
+    if (!this.participants.some(participant => participant.id === this.focusParticipantId)) {
+      this.focusParticipantId = this.participants[0]?.id ?? ''
+    }
+  }
+
+  toObject() {
+    return {
+      id: this.id,
+      type: this.type,
+      hidden: this.hidden,
+      name: this.name,
+      scoreType: this.scoreType,
+      topCount: this.topCount,
+      neighborCount: this.neighborCount,
+      transform: { ...this.transform },
+      focusParticipantId: this.focusParticipantId,
+      participants: this.participants.map(participant => ({ ...participant })),
+    }
+  }
+}
+
 function moduleClassFor(type) {
   if (type === 'image') return ImageModule
   if (type === 'text') return TextModule
   if (type === 'dj') return DJModule
+  if (type === 'leaderboard') return LeaderboardModule
   return ProgressBarModule
 }
 
@@ -295,6 +382,20 @@ export function newModule(type, moduleDefaults, newId) {
       moodWindow: d.moodWindow,
       targetStyles: [],
       targetAttributes: {},
+    }, newId).toObject()
+  }
+
+  if (actualType === 'leaderboard') {
+    const d = moduleDefaults.leaderboard ?? FACTORY_MODULE_DEFAULTS.leaderboard
+    return new LeaderboardModule({
+      hidden: false,
+      name: d.name,
+      scoreType: d.scoreType === 'time' ? 'time' : 'number',
+      topCount: d.topCount,
+      neighborCount: d.neighborCount,
+      transform: { ...DEFAULT_LEADERBOARD_TRANSFORM, ...(d.transform ?? {}) },
+      focusParticipantId: d.focusParticipantId,
+      participants: Array.isArray(d.participants) ? d.participants.map(participant => ({ ...participant })) : [],
     }, newId).toObject()
   }
 

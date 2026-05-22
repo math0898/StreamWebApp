@@ -31,6 +31,28 @@
         >
           {{ mod.text }}
         </div>
+
+        <div
+          v-else-if="mod.type === 'leaderboard'"
+          class="leaderboard-module"
+          :style="leaderboardStyle(mod)"
+        >
+          <div class="leaderboard-header">
+            <span>{{ mod.name || 'Leaderboard' }}</span>
+          </div>
+          <transition-group name="leaderboard-row" tag="div" class="leaderboard-rows">
+            <div
+              v-for="row in visibleLeaderboardRows(mod)"
+              :key="`${mod.id}-${row.id}`"
+              class="leaderboard-row"
+              :class="{ 'leaderboard-row-focus': row.id === mod.focusParticipantId }"
+            >
+              <span class="leaderboard-rank">#{{ row.rank }}</span>
+              <span class="leaderboard-user">{{ row.username }}</span>
+              <span class="leaderboard-score">{{ formatLeaderboardScore(row.score, mod.scoreType) }}</span>
+            </div>
+          </transition-group>
+        </div>
         </template>
       </template>
 
@@ -144,6 +166,67 @@ function textModuleStyle(mod) {
     whiteSpace: 'pre-wrap',
     textShadow: '0 1px 4px rgba(0,0,0,0.7)',
   }
+}
+
+function leaderboardStyle(mod) {
+  const tr = mod?.transform ?? {}
+  return {
+    position: 'absolute',
+    left: '0px',
+    top: '0px',
+    transform: `translate(${tr.x ?? 0}px, ${tr.y ?? 0}px) scale(${tr.scaleX ?? 1}, ${tr.scaleY ?? 1})`,
+    transformOrigin: 'left top',
+  }
+}
+
+function sortedLeaderboardRows(mod) {
+  const participants = Array.isArray(mod?.participants) ? mod.participants : []
+  return [...participants]
+    .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
+    .map((participant, index) => ({
+      ...participant,
+      rank: index + 1,
+    }))
+}
+
+function visibleLeaderboardRows(mod) {
+  const sorted = sortedLeaderboardRows(mod)
+  if (sorted.length === 0) return []
+  const topCount = Math.max(1, Math.floor(mod?.topCount ?? 3))
+  const neighborCount = Math.max(0, Math.floor(mod?.neighborCount ?? 2))
+  const focusRank = sorted.findIndex(participant => participant.id === mod?.focusParticipantId)
+  const focusIndex = focusRank >= 0 ? focusRank : 0
+  const selectedIndexes = new Set()
+  for (let i = 0; i < Math.min(topCount, sorted.length); i += 1) selectedIndexes.add(i)
+  for (let i = Math.max(0, focusIndex - neighborCount); i <= Math.min(sorted.length - 1, focusIndex + neighborCount); i += 1) {
+    selectedIndexes.add(i)
+  }
+  return [...selectedIndexes]
+    .sort((a, b) => a - b)
+    .map(index => sorted[index])
+}
+
+function formatLeaderboardScore(rawScore, scoreType) {
+  const score = typeof rawScore === 'number' && Number.isFinite(rawScore) ? rawScore : 0
+  if (scoreType !== 'time') return Number.isInteger(score) ? String(score) : score.toFixed(3).replace(/\.?0+$/, '')
+  const negative = score < 0
+  let rest = Math.abs(score)
+  const ms = Math.floor(rest % 1000)
+  rest = Math.floor(rest / 1000)
+  const seconds = rest % 60
+  rest = Math.floor(rest / 60)
+  const minutes = rest % 60
+  rest = Math.floor(rest / 60)
+  const hours = rest % 24
+  const days = Math.floor(rest / 24)
+  let units = []
+  if (days > 0) units = [`${days}d`, `${hours}h`, `${minutes}m`]
+  else if (hours > 0) units = [`${hours}h`, `${minutes}m`, `${seconds}s`]
+  else if (minutes > 0) units = [`${minutes}m`, `${seconds}s`]
+  else if (seconds > 0) units = [`${seconds}s`, `${ms}ms`]
+  else units = [`${ms}ms`]
+  units = units.filter((unit, index) => index === 0 || !unit.startsWith('0'))
+  return `${negative ? '-' : ''}${units.join(' ')}`
 }
 
 function computeElapsedSec(snapshot, nowMs = Date.now()) {
@@ -396,6 +479,78 @@ onUnmounted(() => {
 
 .text-module {
   font-weight: 600;
+}
+
+.leaderboard-module {
+  min-width: 280px;
+  max-width: 420px;
+  padding: 0.65rem 0.8rem;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.78);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  backdrop-filter: blur(2px);
+  color: #ffffff;
+  pointer-events: none;
+}
+
+.leaderboard-header {
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.86);
+  margin-bottom: 0.4rem;
+}
+
+.leaderboard-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.leaderboard-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 0.55rem;
+  align-items: center;
+  padding: 0.2rem 0.4rem;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.leaderboard-row-focus {
+  background: rgba(130, 177, 255, 0.2);
+  border: 1px solid rgba(130, 177, 255, 0.55);
+}
+
+.leaderboard-rank {
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 0.82rem;
+}
+
+.leaderboard-user {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.leaderboard-score {
+  font-weight: 700;
+  color: #82b1ff;
+  font-variant-numeric: tabular-nums;
+}
+
+.leaderboard-row-move,
+.leaderboard-row-enter-active,
+.leaderboard-row-leave-active {
+  transition: all 0.35s ease;
+}
+
+.leaderboard-row-enter-from,
+.leaderboard-row-leave-to {
+  opacity: 0;
+  transform: translateY(-6px);
 }
 
 .now-playing-popup {
