@@ -1,9 +1,10 @@
 import express from 'express'
 import { rateLimit } from 'express-rate-limit'
 import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync } from 'fs'
-import { join, dirname, extname, isAbsolute } from 'path'
+import { join, dirname, extname, isAbsolute, resolve, sep } from 'path'
 import { fileURLToPath } from 'url'
 import { randomUUID } from 'crypto'
+import { homedir } from 'os'
 import {
   MODULE_TYPES,
   FACTORY_MODULE_DEFAULTS,
@@ -34,6 +35,8 @@ const MAX_DEBUG_MESSAGES = 120
 const MAX_RECENTLY_PLAYED = 200
 const IMPORT_RATE_LIMIT_WINDOW_MS = 60_000
 const IMPORT_RATE_LIMIT_MAX_REQUESTS = 8
+const LOCAL_IMAGE_RATE_LIMIT_WINDOW_MS = 60_000
+const LOCAL_IMAGE_RATE_LIMIT_MAX_REQUESTS = 120
 const DOT_CHAR_CODE = '.'.charCodeAt(0)
 const ALBUM_FOLDER_SEPARATOR = ' - '
 const AUDIO_EXTENSIONS = new Set(['.mp3', '.ogg', '.wav'])
@@ -77,6 +80,21 @@ const musicImportLimiter = rateLimit({
   legacyHeaders: false,
   message: { error: 'Too many import attempts. Please wait and try again.' },
 })
+const localImageLimiter = rateLimit({
+  windowMs: LOCAL_IMAGE_RATE_LIMIT_WINDOW_MS,
+  limit: LOCAL_IMAGE_RATE_LIMIT_MAX_REQUESTS,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many image path requests. Please wait and try again.' },
+})
+const LOCAL_IMAGE_ALLOWED_ROOTS = (() => {
+  const configured = (process.env.LOCAL_IMAGE_ALLOWED_ROOTS ?? '')
+    .split(',')
+    .map(item => item.trim())
+    .filter(Boolean)
+  const roots = configured.length > 0 ? configured : [PUBLIC_DIR, homedir()]
+  return [...new Set(roots.map(item => resolve(item)))]
+})()
 
 function newId() { return randomUUID().slice(0, 8) }
 
@@ -102,6 +120,19 @@ function normalizeAbsoluteImagePath(rawPath) {
     }
   }
   return trimmed
+}
+
+function normalizeForPathCompare(value) {
+  if (process.platform === 'win32') return value.toLowerCase()
+  return value
+}
+
+function isPathWithinRoot(candidatePath, allowedRoot) {
+  const normalizedCandidate = normalizeForPathCompare(resolve(candidatePath))
+  const normalizedRoot = normalizeForPathCompare(resolve(allowedRoot))
+  if (normalizedCandidate === normalizedRoot) return true
+  const rootPrefix = normalizedRoot.endsWith(sep) ? normalizedRoot : `${normalizedRoot}${sep}`
+  return normalizedCandidate.startsWith(rootPrefix)
 }
 
 function patchProgressBar(target, patch) {
@@ -1199,14 +1230,18 @@ const clients = new Set()
 app.use(express.json({ limit: '50mb' }))
 app.use('/Music', express.static(MUSIC_DIR))
 
-app.get('/api/local-image', (req, res) => {
-  const normalizedPath = normalizeAbsoluteImagePath(typeof req.query.path === 'string' ? req.query.path : '')
-  if (!normalizedPath || !isAbsoluteFilePath(normalizedPath)) {
+app.get('/api/local-image', localImageLimiter, (req, res) => {
+  const requestedPath = normalizeAbsoluteImagePath(typeof req.query.path === 'string' ? req.query.path : '')
+  if (!requestedPath || !isAbsoluteFilePath(requestedPath)) {
     return res.status(400).json({ error: 'path must be an absolute file path' })
   }
+  const normalizedPath = resolve(requestedPath)
   const extension = extname(normalizedPath).toLowerCase()
   if (!IMAGE_EXTENSIONS.has(extension)) {
     return res.status(400).json({ error: 'path must target an image file' })
+  }
+  if (!LOCAL_IMAGE_ALLOWED_ROOTS.some(root => isPathWithinRoot(normalizedPath, root))) {
+    return res.status(403).json({ error: 'path is outside allowed directories' })
   }
   if (!existsSync(normalizedPath)) {
     return res.status(404).json({ error: 'file not found' })
