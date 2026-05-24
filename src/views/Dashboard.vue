@@ -553,6 +553,67 @@
               </div>
               <button class="counter-btn-sm" @click="addLeaderboardNumberColorKey(mod)">+ Add Score Key</button>
             </template>
+            <p class="edit-sub">Artwork</p>
+            <div class="edit-row">
+              <label class="edit-label">Background</label>
+              <input
+                type="text"
+                class="wide-input"
+                placeholder="/path/to/image.png"
+                :value="leaderboardAppearance(mod).backgroundImage.src"
+                @change="patchLeaderboardBackgroundImage(mod, { src: $event.target.value })"
+              />
+            </div>
+            <div class="edit-row">
+              <label class="edit-label">Background Opacity</label>
+              <input
+                type="number"
+                min="0"
+                max="1"
+                step="0.05"
+                :value="leaderboardAppearance(mod).backgroundImage.opacity"
+                @change="patchLeaderboardBackgroundImage(mod, { opacity: $event.target.valueAsNumber })"
+              />
+            </div>
+            <div class="edit-row">
+              <label class="edit-label">Icon Size</label>
+              <input
+                type="number"
+                min="0"
+                step="1"
+                :value="leaderboardAppearance(mod).participantIconSizePx"
+                @change="patchLeaderboardAppearance(mod, { participantIconSizePx: $event.target.valueAsNumber })"
+              />
+              <span class="edit-unit">px</span>
+            </div>
+            <div
+              v-for="field in leaderboardArtFields"
+              :key="`${mod.id}-bg-art-${field.key}`"
+              class="edit-row"
+            >
+              <label class="edit-label">{{ field.label }}</label>
+              <input
+                type="number"
+                :step="field.step"
+                :value="leaderboardAppearance(mod).backgroundImage[field.key]"
+                @change="patchLeaderboardBackgroundImage(mod, { [field.key]: $event.target.valueAsNumber })"
+              />
+            </div>
+            <div
+              v-for="field in leaderboardCropFields"
+              :key="`${mod.id}-bg-crop-${field.key}`"
+              class="edit-row"
+            >
+              <label class="edit-label">{{ field.label }}</label>
+              <input
+                type="number"
+                min="0"
+                step="1"
+                :value="leaderboardAppearance(mod).backgroundImage[field.key]"
+                @change="patchLeaderboardBackgroundImage(mod, { [field.key]: $event.target.valueAsNumber })"
+              />
+              <span class="edit-unit">px</span>
+            </div>
             <p class="edit-sub">Auto-Hide</p>
             <div class="edit-row checkbox-row">
               <label class="edit-label">Enable</label>
@@ -659,20 +720,83 @@
                 <button class="action-btn participant-expand-btn" :class="{ 'action-edit-active': isParticipantEditOpen(mod.id, participant.id) }" @click="toggleParticipantEdit(mod.id, participant.id)" title="More options">⋯</button>
               </div>
               <div v-if="isParticipantEditOpen(mod.id, participant.id)" class="participant-extra-row">
-                <button class="counter-btn-sm" :class="{ 'participant-focus-btn': participant.id === mod.focusParticipantId }" @click="patchMod(mod.id, { focusParticipantId: participant.id })">Focus</button>
-                <input
-                  type="color"
-                  :value="leaderboardUsernameColor(mod, participant.id)"
-                  @input="setLeaderboardUsernameColor(mod, participant.id, $event.target.value)"
-                  title="Username color"
-                />
-                <button
-                  v-if="hasLeaderboardUsernameColor(mod, participant.id)"
-                  class="action-btn"
-                  @click="clearLeaderboardUsernameColor(mod, participant.id)"
-                >Default</button>
-                <span v-else class="participant-default-pill">Default</span>
-                <button v-if="(mod.participants?.length ?? 0) > 1" class="action-btn action-delete" @click="removeLeaderboardParticipant(mod, participant.id)">✕</button>
+                <div class="participant-extra-actions">
+                  <button class="counter-btn-sm" :class="{ 'participant-focus-btn': participant.id === mod.focusParticipantId }" @click="patchMod(mod.id, { focusParticipantId: participant.id })">Focus</button>
+                  <input
+                    type="color"
+                    :value="leaderboardUsernameColor(mod, participant.id)"
+                    @input="setLeaderboardUsernameColor(mod, participant.id, $event.target.value)"
+                    title="Username color"
+                  />
+                  <button
+                    v-if="hasLeaderboardUsernameColor(mod, participant.id)"
+                    class="action-btn"
+                    @click="clearLeaderboardUsernameColor(mod, participant.id)"
+                  >Default</button>
+                  <span v-else class="participant-default-pill">Default</span>
+                  <button v-if="(mod.participants?.length ?? 0) > 1" class="action-btn action-delete" @click="removeLeaderboardParticipant(mod, participant.id)">✕</button>
+                </div>
+                <div class="edit-row participant-extra-edit-row">
+                  <label class="edit-label">Icon</label>
+                  <input
+                    type="text"
+                    class="wide-input"
+                    placeholder="/path/to/icon.png"
+                    :value="participant.iconSrc ?? ''"
+                    @change="updateLeaderboardParticipant(mod, participant.id, { iconSrc: $event.target.value })"
+                  />
+                </div>
+                <div class="edit-row participant-extra-edit-row">
+                  <label class="edit-label">Backdrop</label>
+                  <input
+                    type="text"
+                    class="wide-input"
+                    placeholder="/path/to/backdrop.png"
+                    :value="participant.backdropImage?.src ?? ''"
+                    @change="updateLeaderboardParticipant(mod, participant.id, { backdropImage: { src: $event.target.value } })"
+                  />
+                </div>
+                <div class="edit-row participant-extra-edit-row">
+                  <label class="edit-label">Backdrop Opacity</label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="1"
+                    step="0.05"
+                    :value="participant.backdropImage?.opacity ?? 1"
+                    @change="updateLeaderboardParticipant(mod, participant.id, { backdropImage: { opacity: $event.target.valueAsNumber } })"
+                  />
+                </div>
+                <div class="participant-art-grid">
+                  <div
+                    v-for="field in leaderboardArtFields"
+                    :key="`${mod.id}-${participant.id}-art-${field.key}`"
+                    class="edit-row participant-extra-edit-row"
+                  >
+                    <label class="edit-label">{{ field.label }}</label>
+                    <input
+                      type="number"
+                      :step="field.step"
+                      :value="participant.backdropImage?.[field.key] ?? (field.key.startsWith('scale') ? 1 : 0)"
+                      @change="updateLeaderboardParticipant(mod, participant.id, { backdropImage: { [field.key]: $event.target.valueAsNumber } })"
+                    />
+                  </div>
+                  <div
+                    v-for="field in leaderboardCropFields"
+                    :key="`${mod.id}-${participant.id}-crop-${field.key}`"
+                    class="edit-row participant-extra-edit-row"
+                  >
+                    <label class="edit-label">{{ field.label }}</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      :value="participant.backdropImage?.[field.key] ?? 0"
+                      @change="updateLeaderboardParticipant(mod, participant.id, { backdropImage: { [field.key]: $event.target.valueAsNumber } })"
+                    />
+                    <span class="edit-unit">px</span>
+                  </div>
+                </div>
               </div>
             </div>
             <button class="counter-btn-sm" @click="addLeaderboardParticipant(mod)">+ Add Participant</button>
@@ -758,6 +882,18 @@ const transformFields = [
   { key: 'y',      label: 'Y Offset', step: 1 },
   { key: 'scaleX', label: 'Scale X',  step: 0.1 },
   { key: 'scaleY', label: 'Scale Y',  step: 0.1 },
+]
+const leaderboardArtFields = [
+  { key: 'x', label: 'X Offset', step: 1 },
+  { key: 'y', label: 'Y Offset', step: 1 },
+  { key: 'scaleX', label: 'Scale X', step: 0.1 },
+  { key: 'scaleY', label: 'Scale Y', step: 0.1 },
+]
+const leaderboardCropFields = [
+  { key: 'cropTop', label: 'Crop Top', step: 1 },
+  { key: 'cropRight', label: 'Crop Right', step: 1 },
+  { key: 'cropBottom', label: 'Crop Bottom', step: 1 },
+  { key: 'cropLeft', label: 'Crop Left', step: 1 },
 ]
 const textTransformFields = [
   { key: 'x',        label: 'X Offset', step: 1 },
@@ -1062,6 +1198,22 @@ function sortedLeaderboardParticipants(mod) {
   return [...participants].sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
 }
 
+function leaderboardArt(source) {
+  const item = source && typeof source === 'object' ? source : {}
+  return {
+    src: typeof item.src === 'string' ? item.src : '',
+    x: typeof item.x === 'number' && Number.isFinite(item.x) ? item.x : 0,
+    y: typeof item.y === 'number' && Number.isFinite(item.y) ? item.y : 0,
+    scaleX: typeof item.scaleX === 'number' && Number.isFinite(item.scaleX) ? item.scaleX : 1,
+    scaleY: typeof item.scaleY === 'number' && Number.isFinite(item.scaleY) ? item.scaleY : 1,
+    opacity: typeof item.opacity === 'number' && Number.isFinite(item.opacity) && item.opacity >= 0 && item.opacity <= 1 ? item.opacity : 1,
+    cropTop: typeof item.cropTop === 'number' && Number.isFinite(item.cropTop) && item.cropTop >= 0 ? item.cropTop : 0,
+    cropRight: typeof item.cropRight === 'number' && Number.isFinite(item.cropRight) && item.cropRight >= 0 ? item.cropRight : 0,
+    cropBottom: typeof item.cropBottom === 'number' && Number.isFinite(item.cropBottom) && item.cropBottom >= 0 ? item.cropBottom : 0,
+    cropLeft: typeof item.cropLeft === 'number' && Number.isFinite(item.cropLeft) && item.cropLeft >= 0 ? item.cropLeft : 0,
+  }
+}
+
 function leaderboardAppearance(mod) {
   const source = mod?.appearance ?? {}
   const usernameColors = source.usernameColors && typeof source.usernameColors === 'object' && !Array.isArray(source.usernameColors)
@@ -1111,6 +1263,8 @@ function leaderboardAppearance(mod) {
     backgroundAlpha: Number.isFinite(Number(source.backgroundAlpha)) && Number(source.backgroundAlpha) >= 0 && Number(source.backgroundAlpha) <= 255 ? Math.round(Number(source.backgroundAlpha)) : 199,
     borderColor: typeof source.borderColor === 'string' && /^#[0-9a-f]{6}$/i.test(source.borderColor) ? source.borderColor : '#ffffff',
     borderAlpha: Number.isFinite(Number(source.borderAlpha)) && Number(source.borderAlpha) >= 0 && Number(source.borderAlpha) <= 255 ? Math.round(Number(source.borderAlpha)) : 36,
+    backgroundImage: leaderboardArt(source.backgroundImage),
+    participantIconSizePx: typeof source.participantIconSizePx === 'number' && Number.isFinite(source.participantIconSizePx) && source.participantIconSizePx >= 0 ? source.participantIconSizePx : 24,
     autoHide,
   }
 }
@@ -1124,6 +1278,9 @@ function patchLeaderboardAppearance(mod, patch) {
       ? patch.usernameColors
       : current.usernameColors,
     numberColorKeys: Array.isArray(patch.numberColorKeys) ? patch.numberColorKeys : current.numberColorKeys,
+    backgroundImage: patch.backgroundImage && typeof patch.backgroundImage === 'object'
+      ? { ...current.backgroundImage, ...patch.backgroundImage }
+      : current.backgroundImage,
     autoHide: patch.autoHide && typeof patch.autoHide === 'object'
       ? {
         ...current.autoHide,
@@ -1135,6 +1292,15 @@ function patchLeaderboardAppearance(mod, patch) {
       : current.autoHide,
   }
   patchMod(mod.id, { appearance: next })
+}
+
+function patchLeaderboardBackgroundImage(mod, patch) {
+  patchLeaderboardAppearance(mod, {
+    backgroundImage: {
+      ...leaderboardAppearance(mod).backgroundImage,
+      ...patch,
+    },
+  })
 }
 
 function leaderboardFocusSnapshot(mod) {
@@ -1255,11 +1421,16 @@ function setLeaderboardScore(mod, forceValue = null) {
 function updateLeaderboardParticipant(mod, participantId, patch) {
   const participants = (mod.participants ?? []).map((participant, idx) => {
     if (participant.id !== participantId) return participant
+    const currentBackdrop = leaderboardArt(participant.backdropImage)
     const username = typeof patch.username === 'string'
       ? (patch.username.trim() || `Player ${idx + 1}`)
       : participant.username
     const score = typeof patch.score === 'number' && Number.isFinite(patch.score) ? patch.score : participant.score
-    return { ...participant, username, score }
+    const iconSrc = typeof patch.iconSrc === 'string' ? patch.iconSrc : (participant.iconSrc ?? '')
+    const backdropImage = patch.backdropImage && typeof patch.backdropImage === 'object'
+      ? { ...currentBackdrop, ...patch.backdropImage }
+      : currentBackdrop
+    return { ...participant, username, score, iconSrc, backdropImage }
   })
   patchLeaderboardParticipants(mod, participants)
 }
@@ -1813,11 +1984,28 @@ h1 {
 
 .participant-extra-row {
   display: flex;
+  flex-direction: column;
   gap: 0.4rem;
-  align-items: center;
   padding: 0.3rem 0.3rem 0.1rem 1.4rem;
   border-left: 2px solid #2a2a2a;
   margin-left: 0.2rem;
+}
+
+.participant-extra-actions {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.participant-extra-edit-row {
+  margin-bottom: 0;
+}
+
+.participant-art-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.4rem 0.8rem;
 }
 
 .participant-expand-btn {

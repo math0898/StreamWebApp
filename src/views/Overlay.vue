@@ -39,6 +39,13 @@
             :style="leaderboardShellStyle(mod)"
           >
             <div class="leaderboard-module" :style="leaderboardStyle(mod)">
+              <div v-if="leaderboardAppearance(mod).backgroundImage.src" class="leaderboard-background-art">
+                <img
+                  :src="leaderboardAppearance(mod).backgroundImage.src"
+                  alt=""
+                  :style="leaderboardArtworkStyle(leaderboardAppearance(mod).backgroundImage)"
+                />
+              </div>
               <div class="leaderboard-header" :style="leaderboardHeaderStyle(mod)">
                 <span>{{ mod.name || 'Leaderboard' }}</span>
               </div>
@@ -51,10 +58,23 @@
                     'leaderboard-row-focus': row.id === mod.focusParticipantId,
                     'leaderboard-row-divider': row.showDivider,
                     'leaderboard-row-no-rank': !leaderboardAppearance(mod).showRankNumbers,
+                    'leaderboard-row-with-icon': leaderboardHasIcons(mod),
                   }"
                   :style="leaderboardRowStyle(mod, row)"
                 >
+                  <div v-if="row.backdropImage?.src" class="leaderboard-row-backdrop">
+                    <img :src="row.backdropImage.src" alt="" :style="leaderboardArtworkStyle(row.backdropImage)" />
+                  </div>
                   <span v-if="leaderboardAppearance(mod).showRankNumbers" class="leaderboard-rank" :style="leaderboardNumberStyle(mod, row)">#{{ row.rank }}</span>
+                  <span v-if="leaderboardHasIcons(mod)" class="leaderboard-icon-slot" :style="leaderboardIconSlotStyle(mod)">
+                    <img
+                      v-if="row.iconSrc"
+                      class="leaderboard-participant-icon"
+                      :src="row.iconSrc"
+                      alt=""
+                      :style="leaderboardIconStyle(mod)"
+                    />
+                  </span>
                   <span class="leaderboard-user" :style="leaderboardUsernameStyle(mod, row)">{{ row.username }}</span>
                   <span class="leaderboard-score" :style="leaderboardNumberStyle(mod, row)">{{ formatLeaderboardScore(row.score, mod.scoreType) }}</span>
                 </div>
@@ -228,6 +248,22 @@ function textModuleStyle(mod) {
   }
 }
 
+function leaderboardArt(source) {
+  const item = source && typeof source === 'object' ? source : {}
+  return {
+    src: typeof item.src === 'string' ? item.src : '',
+    x: typeof item.x === 'number' && Number.isFinite(item.x) ? item.x : 0,
+    y: typeof item.y === 'number' && Number.isFinite(item.y) ? item.y : 0,
+    scaleX: typeof item.scaleX === 'number' && Number.isFinite(item.scaleX) ? item.scaleX : 1,
+    scaleY: typeof item.scaleY === 'number' && Number.isFinite(item.scaleY) ? item.scaleY : 1,
+    opacity: typeof item.opacity === 'number' && Number.isFinite(item.opacity) && item.opacity >= 0 && item.opacity <= 1 ? item.opacity : 1,
+    cropTop: typeof item.cropTop === 'number' && Number.isFinite(item.cropTop) && item.cropTop >= 0 ? item.cropTop : 0,
+    cropRight: typeof item.cropRight === 'number' && Number.isFinite(item.cropRight) && item.cropRight >= 0 ? item.cropRight : 0,
+    cropBottom: typeof item.cropBottom === 'number' && Number.isFinite(item.cropBottom) && item.cropBottom >= 0 ? item.cropBottom : 0,
+    cropLeft: typeof item.cropLeft === 'number' && Number.isFinite(item.cropLeft) && item.cropLeft >= 0 ? item.cropLeft : 0,
+  }
+}
+
 function leaderboardStyle(mod) {
   const appearance = leaderboardAppearance(mod)
   const bg = parseHexColor(appearance.backgroundColor)
@@ -289,7 +325,25 @@ function leaderboardAppearance(mod) {
     backgroundAlpha: Number.isFinite(Number(source.backgroundAlpha)) && Number(source.backgroundAlpha) >= 0 && Number(source.backgroundAlpha) <= 255 ? Math.round(Number(source.backgroundAlpha)) : 199,
     borderColor: typeof source.borderColor === 'string' && /^#[0-9a-f]{6}$/i.test(source.borderColor) ? source.borderColor : '#ffffff',
     borderAlpha: Number.isFinite(Number(source.borderAlpha)) && Number(source.borderAlpha) >= 0 && Number(source.borderAlpha) <= 255 ? Math.round(Number(source.borderAlpha)) : 36,
+    backgroundImage: leaderboardArt(source.backgroundImage),
+    participantIconSizePx: typeof source.participantIconSizePx === 'number' && Number.isFinite(source.participantIconSizePx) && source.participantIconSizePx >= 0 ? source.participantIconSizePx : 24,
     autoHide,
+  }
+}
+
+function leaderboardArtworkStyle(source) {
+  const art = leaderboardArt(source)
+  return {
+    position: 'absolute',
+    inset: '0',
+    width: '100%',
+    height: '100%',
+    objectFit: 'cover',
+    transform: `translate(${art.x}px, ${art.y}px) scale(${art.scaleX}, ${art.scaleY})`,
+    transformOrigin: 'center center',
+    opacity: `${art.opacity}`,
+    clipPath: `inset(${art.cropTop}px ${art.cropRight}px ${art.cropBottom}px ${art.cropLeft}px)`,
+    pointerEvents: 'none',
   }
 }
 
@@ -379,6 +433,26 @@ function leaderboardUsernameStyle(mod, row) {
 function leaderboardNumberStyle(mod, row) {
   return {
     color: leaderboardNumberColor(mod, row),
+  }
+}
+
+function leaderboardHasIcons(mod) {
+  return visibleLeaderboardRows(mod).some(row => typeof row.iconSrc === 'string' && row.iconSrc.trim())
+}
+
+function leaderboardIconSlotStyle(mod) {
+  const size = leaderboardAppearance(mod).participantIconSizePx
+  return {
+    width: `${size}px`,
+    height: `${size}px`,
+  }
+}
+
+function leaderboardIconStyle(mod) {
+  const size = leaderboardAppearance(mod).participantIconSizePx
+  return {
+    width: `${size}px`,
+    height: `${size}px`,
   }
 }
 
@@ -706,6 +780,7 @@ onUnmounted(() => {
 }
 
 .leaderboard-module {
+  position: relative;
   min-width: 280px;
   max-width: 420px;
   padding: 0.65rem 0.8rem;
@@ -713,11 +788,25 @@ onUnmounted(() => {
   backdrop-filter: blur(2px);
   color: #ffffff;
   pointer-events: none;
+  overflow: hidden;
 }
 
 .leaderboard-pop-shell {
   transform: translate(var(--leaderboard-base-x, 0px), var(--leaderboard-base-y, 0px))
     scale(var(--leaderboard-scale-x, 1), var(--leaderboard-scale-y, 1));
+}
+
+.leaderboard-background-art {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.leaderboard-module > :not(.leaderboard-background-art) {
+  position: relative;
+  z-index: 1;
 }
 
 .leaderboard-header {
@@ -736,6 +825,7 @@ onUnmounted(() => {
 }
 
 .leaderboard-row {
+  position: relative;
   display: grid;
   grid-template-columns: auto 1fr auto;
   gap: 0.55rem;
@@ -743,10 +833,19 @@ onUnmounted(() => {
   padding: 0.2rem 0.4rem;
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.05);
+  overflow: hidden;
 }
 
 .leaderboard-row-no-rank {
   grid-template-columns: 1fr auto;
+}
+
+.leaderboard-row-with-icon {
+  grid-template-columns: auto auto 1fr auto;
+}
+
+.leaderboard-row-with-icon.leaderboard-row-no-rank {
+  grid-template-columns: auto 1fr auto;
 }
 
 .leaderboard-row-focus {
@@ -761,6 +860,34 @@ onUnmounted(() => {
 .leaderboard-rank {
   color: rgba(255, 255, 255, 0.75);
   font-size: 0.82rem;
+}
+
+.leaderboard-row-backdrop {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.leaderboard-row > :not(.leaderboard-row-backdrop) {
+  position: relative;
+  z-index: 1;
+}
+
+.leaderboard-icon-slot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.leaderboard-participant-icon {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 6px;
+  object-fit: cover;
 }
 
 .leaderboard-user {

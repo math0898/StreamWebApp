@@ -4,6 +4,18 @@ export const DEFAULT_VALUE = { x: 0, y: 0, fontSize: 14 }
 export const DEFAULT_IMAGE_TRANSFORM = { x: 0, y: 0, scaleX: 1, scaleY: 1 }
 export const DEFAULT_TEXT_TRANSFORM = { x: 0, y: 0, scaleX: 1, scaleY: 1, fontSize: 32 }
 export const DEFAULT_LEADERBOARD_TRANSFORM = { x: 0, y: 0, scaleX: 1, scaleY: 1 }
+export const DEFAULT_LEADERBOARD_ART = {
+  src: '',
+  x: 0,
+  y: 0,
+  scaleX: 1,
+  scaleY: 1,
+  opacity: 1,
+  cropTop: 0,
+  cropRight: 0,
+  cropBottom: 0,
+  cropLeft: 0,
+}
 
 export const MODULE_TYPES = new Set(['progressBar', 'image', 'text', 'dj', 'leaderboard'])
 
@@ -56,6 +68,8 @@ export const FACTORY_MODULE_DEFAULTS = {
       backgroundAlpha: 199,
       borderColor: '#ffffff',
       borderAlpha: 36,
+      backgroundImage: { ...DEFAULT_LEADERBOARD_ART },
+      participantIconSizePx: 24,
       autoHide: {
         enabled: false,
         hideDelaySec: 30,
@@ -89,6 +103,33 @@ function sanitizeAlpha(raw, fallback) {
   const n = Number(raw)
   if (!Number.isFinite(n) || n < 0 || n > 255) return fallback
   return Math.round(n)
+}
+
+function sanitizeOpacity(raw, fallback) {
+  const n = Number(raw)
+  if (!Number.isFinite(n) || n < 0 || n > 1) return fallback
+  return n
+}
+
+function sanitizeNonNegative(raw, fallback) {
+  const n = Number(raw)
+  return Number.isFinite(n) && n >= 0 ? n : fallback
+}
+
+function sanitizeLeaderboardArt(raw, fallback = DEFAULT_LEADERBOARD_ART) {
+  const source = raw && typeof raw === 'object' ? raw : {}
+  return {
+    src: typeof source.src === 'string' ? source.src.trim() : fallback.src,
+    x: typeof source.x === 'number' && Number.isFinite(source.x) ? source.x : fallback.x,
+    y: typeof source.y === 'number' && Number.isFinite(source.y) ? source.y : fallback.y,
+    scaleX: typeof source.scaleX === 'number' && Number.isFinite(source.scaleX) ? source.scaleX : fallback.scaleX,
+    scaleY: typeof source.scaleY === 'number' && Number.isFinite(source.scaleY) ? source.scaleY : fallback.scaleY,
+    opacity: sanitizeOpacity(source.opacity, fallback.opacity),
+    cropTop: sanitizeNonNegative(source.cropTop, fallback.cropTop),
+    cropRight: sanitizeNonNegative(source.cropRight, fallback.cropRight),
+    cropBottom: sanitizeNonNegative(source.cropBottom, fallback.cropBottom),
+    cropLeft: sanitizeNonNegative(source.cropLeft, fallback.cropLeft),
+  }
 }
 
 function sanitizeLeaderboardAppearance(raw, fallback = FACTORY_MODULE_DEFAULTS.leaderboard.appearance) {
@@ -158,6 +199,8 @@ function sanitizeLeaderboardAppearance(raw, fallback = FACTORY_MODULE_DEFAULTS.l
     backgroundAlpha: sanitizeAlpha(source.backgroundAlpha, fallback.backgroundAlpha ?? 199),
     borderColor: sanitizeHexColor(source.borderColor, fallback.borderColor ?? '#ffffff'),
     borderAlpha: sanitizeAlpha(source.borderAlpha, fallback.borderAlpha ?? 36),
+    backgroundImage: sanitizeLeaderboardArt(source.backgroundImage, fallback.backgroundImage ?? DEFAULT_LEADERBOARD_ART),
+    participantIconSizePx: sanitizeNonNegative(source.participantIconSizePx, fallback.participantIconSizePx ?? 24),
     autoHide,
   }
 }
@@ -376,6 +419,8 @@ function sanitizeParticipant(raw, newId, idx = 0) {
     id: typeof raw?.id === 'string' && raw.id.trim() ? raw.id.trim() : (generatedId || `participant-${idx + 1}`),
     username: typeof raw?.username === 'string' && raw.username.trim() ? raw.username.trim() : fallback,
     score: typeof raw?.score === 'number' && Number.isFinite(raw.score) ? raw.score : 0,
+    iconSrc: typeof raw?.iconSrc === 'string' ? raw.iconSrc.trim() : '',
+    backdropImage: sanitizeLeaderboardArt(raw?.backdropImage, DEFAULT_LEADERBOARD_ART),
   }
 }
 
@@ -421,6 +466,18 @@ class LeaderboardModule extends AbstractModule {
           ? { ...this.appearance.usernameColors, ...incoming.usernameColors }
           : this.appearance.usernameColors,
         numberColorKeys: Array.isArray(incoming.numberColorKeys) ? incoming.numberColorKeys : this.appearance.numberColorKeys,
+        backgroundImage: incoming.backgroundImage && typeof incoming.backgroundImage === 'object'
+          ? { ...this.appearance.backgroundImage, ...incoming.backgroundImage }
+          : this.appearance.backgroundImage,
+        autoHide: incoming.autoHide && typeof incoming.autoHide === 'object'
+          ? {
+            ...this.appearance.autoHide,
+            ...incoming.autoHide,
+            animation: incoming.autoHide.animation && typeof incoming.autoHide.animation === 'object'
+              ? { ...this.appearance.autoHide.animation, ...incoming.autoHide.animation }
+              : this.appearance.autoHide.animation,
+          }
+          : this.appearance.autoHide,
       }
       this.appearance = sanitizeLeaderboardAppearance(merged, FACTORY_MODULE_DEFAULTS.leaderboard.appearance)
     }
@@ -452,10 +509,17 @@ class LeaderboardModule extends AbstractModule {
         ...this.appearance,
         usernameColors: { ...this.appearance.usernameColors },
         numberColorKeys: this.appearance.numberColorKeys.map(item => ({ ...item })),
-        autoHide: { ...this.appearance.autoHide },
+        backgroundImage: { ...this.appearance.backgroundImage },
+        autoHide: {
+          ...this.appearance.autoHide,
+          animation: { ...this.appearance.autoHide.animation },
+        },
       },
       focusParticipantId: this.focusParticipantId,
-      participants: this.participants.map(participant => ({ ...participant })),
+      participants: this.participants.map(participant => ({
+        ...participant,
+        backdropImage: { ...participant.backdropImage },
+      })),
     }
   }
 }
