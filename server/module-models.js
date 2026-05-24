@@ -11,6 +11,7 @@ export const DEFAULT_LEADERBOARD_ART = {
   scaleX: 1,
   scaleY: 1,
   opacity: 1,
+  blurPx: 0,
   cropTop: 0,
   cropRight: 0,
   cropBottom: 0,
@@ -125,6 +126,7 @@ function sanitizeLeaderboardArt(raw, fallback = DEFAULT_LEADERBOARD_ART) {
     scaleX: typeof source.scaleX === 'number' && Number.isFinite(source.scaleX) ? source.scaleX : fallback.scaleX,
     scaleY: typeof source.scaleY === 'number' && Number.isFinite(source.scaleY) ? source.scaleY : fallback.scaleY,
     opacity: sanitizeOpacity(source.opacity, fallback.opacity),
+    blurPx: sanitizeNonNegative(source.blurPx, fallback.blurPx ?? 0),
     cropTop: sanitizeNonNegative(source.cropTop, fallback.cropTop),
     cropRight: sanitizeNonNegative(source.cropRight, fallback.cropRight),
     cropBottom: sanitizeNonNegative(source.cropBottom, fallback.cropBottom),
@@ -420,6 +422,7 @@ function sanitizeParticipant(raw, newId, idx = 0) {
     username: typeof raw?.username === 'string' && raw.username.trim() ? raw.username.trim() : fallback,
     score: typeof raw?.score === 'number' && Number.isFinite(raw.score) ? raw.score : 0,
     iconSrc: typeof raw?.iconSrc === 'string' ? raw.iconSrc.trim() : '',
+    iconBlurPx: sanitizeNonNegative(raw?.iconBlurPx, 0),
     backdropImage: sanitizeLeaderboardArt(raw?.backdropImage, DEFAULT_LEADERBOARD_ART),
   }
 }

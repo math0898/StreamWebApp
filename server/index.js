@@ -1,7 +1,7 @@
 import express from 'express'
 import { rateLimit } from 'express-rate-limit'
 import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync } from 'fs'
-import { join, dirname, extname } from 'path'
+import { join, dirname, extname, isAbsolute } from 'path'
 import { fileURLToPath } from 'url'
 import { randomUUID } from 'crypto'
 import {
@@ -40,6 +40,8 @@ const AUDIO_EXTENSIONS = new Set(['.mp3', '.ogg', '.wav'])
 const IMAGE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.webp'])
 const AUDIO_MIME_TYPES = new Set(['audio/mpeg', 'audio/ogg', 'audio/wav', 'audio/x-wav'])
 const IMAGE_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp'])
+const WINDOWS_ABSOLUTE_PATH_RE = /^[a-zA-Z]:[\\/]/
+const UNC_ABSOLUTE_PATH_RE = /^\\\\[^\\]+\\[^\\]+/
 const DEFAULT_SONG = {
   title: 'Default Song',
   artist: 'Unknown Artist',
@@ -77,6 +79,30 @@ const musicImportLimiter = rateLimit({
 })
 
 function newId() { return randomUUID().slice(0, 8) }
+
+function isAbsoluteFilePath(rawPath) {
+  if (typeof rawPath !== 'string') return false
+  if (isAbsolute(rawPath)) return true
+  if (WINDOWS_ABSOLUTE_PATH_RE.test(rawPath)) return true
+  if (UNC_ABSOLUTE_PATH_RE.test(rawPath)) return true
+  return false
+}
+
+function normalizeAbsoluteImagePath(rawPath) {
+  if (typeof rawPath !== 'string') return ''
+  const trimmed = rawPath.trim()
+  if (!trimmed) return ''
+  if (trimmed.startsWith('file://')) {
+    try {
+      const asUrl = new URL(trimmed)
+      const decodedPath = decodeURIComponent(asUrl.pathname)
+      return decodedPath.replace(/^\/([a-zA-Z]:[\\/])/, '$1')
+    } catch {
+      return ''
+    }
+  }
+  return trimmed
+}
 
 function patchProgressBar(target, patch) {
   if (typeof patch.label === 'string') target.label = patch.label
@@ -1172,6 +1198,25 @@ const clients = new Set()
 
 app.use(express.json({ limit: '50mb' }))
 app.use('/Music', express.static(MUSIC_DIR))
+
+app.get('/api/local-image', (req, res) => {
+  const normalizedPath = normalizeAbsoluteImagePath(typeof req.query.path === 'string' ? req.query.path : '')
+  if (!normalizedPath || !isAbsoluteFilePath(normalizedPath)) {
+    return res.status(400).json({ error: 'path must be an absolute file path' })
+  }
+  const extension = extname(normalizedPath).toLowerCase()
+  if (!IMAGE_EXTENSIONS.has(extension)) {
+    return res.status(400).json({ error: 'path must target an image file' })
+  }
+  if (!existsSync(normalizedPath)) {
+    return res.status(404).json({ error: 'file not found' })
+  }
+  return res.sendFile(normalizedPath, err => {
+    if (err && !res.headersSent) {
+      res.status(404).json({ error: 'file not found' })
+    }
+  })
+})
 
 function getOverlay(id) {
   return state.overlays.find(o => o.id === id) ?? null

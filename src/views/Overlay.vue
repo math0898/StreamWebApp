@@ -41,7 +41,7 @@
             <div class="leaderboard-module" :style="leaderboardStyle(mod)">
               <div v-if="leaderboardAppearance(mod).backgroundImage.src" class="leaderboard-background-art">
                 <img
-                  :src="leaderboardAppearance(mod).backgroundImage.src"
+                  :src="resolveRenderableImageSrc(leaderboardAppearance(mod).backgroundImage.src)"
                   alt=""
                   :style="leaderboardArtworkStyle(leaderboardAppearance(mod).backgroundImage)"
                 />
@@ -63,16 +63,16 @@
                   :style="leaderboardRowStyle(mod, row)"
                 >
                   <div v-if="row.backdropImage?.src" class="leaderboard-row-backdrop">
-                    <img :src="row.backdropImage.src" alt="" :style="leaderboardArtworkStyle(row.backdropImage)" />
+                    <img :src="resolveRenderableImageSrc(row.backdropImage.src)" alt="" :style="leaderboardArtworkStyle(row.backdropImage)" />
                   </div>
                   <span v-if="leaderboardAppearance(mod).showRankNumbers" class="leaderboard-rank" :style="leaderboardNumberStyle(mod, row)">#{{ row.rank }}</span>
                   <span v-if="leaderboardHasIcons(mod)" class="leaderboard-icon-slot" :style="leaderboardIconSlotStyle(mod)">
                     <img
                       v-if="row.iconSrc"
                       class="leaderboard-participant-icon"
-                      :src="row.iconSrc"
+                      :src="resolveRenderableImageSrc(row.iconSrc)"
                       alt=""
-                      :style="leaderboardIconStyle(mod)"
+                      :style="leaderboardIconStyle(mod, row)"
                     />
                   </span>
                   <span class="leaderboard-user" :style="leaderboardUsernameStyle(mod, row)">{{ row.username }}</span>
@@ -147,6 +147,10 @@ const leaderboardVisualHidden = reactive({})
 const leaderboardHideTimers = {}
 const leaderboardPeriodicTimers = {}
 const leaderboardLastSignature = {}
+const WINDOWS_ABSOLUTE_PATH_RE = /^[a-zA-Z]:[\\/]/ // C:\foo or C:/foo
+const UNC_ABSOLUTE_PATH_RE = /^\\\\[^\\]+\\[^\\]+/
+const FILE_URL_PREFIX = 'file://'
+const LIKELY_POSIX_ABSOLUTE_PREFIXES = ['/home/', '/Users/', '/mnt/', '/var/', '/tmp/', '/opt/', '/srv/', '/etc/', '/usr/', '/private/']
 
 function leaderboardParticipantsSignature(mod) {
   return JSON.stringify((mod?.participants ?? []).map(p => ({ id: p.id, score: p.score })))
@@ -257,6 +261,7 @@ function leaderboardArt(source) {
     scaleX: typeof item.scaleX === 'number' && Number.isFinite(item.scaleX) ? item.scaleX : 1,
     scaleY: typeof item.scaleY === 'number' && Number.isFinite(item.scaleY) ? item.scaleY : 1,
     opacity: typeof item.opacity === 'number' && Number.isFinite(item.opacity) && item.opacity >= 0 && item.opacity <= 1 ? item.opacity : 1,
+    blurPx: typeof item.blurPx === 'number' && Number.isFinite(item.blurPx) && item.blurPx >= 0 ? item.blurPx : 0,
     cropTop: typeof item.cropTop === 'number' && Number.isFinite(item.cropTop) && item.cropTop >= 0 ? item.cropTop : 0,
     cropRight: typeof item.cropRight === 'number' && Number.isFinite(item.cropRight) && item.cropRight >= 0 ? item.cropRight : 0,
     cropBottom: typeof item.cropBottom === 'number' && Number.isFinite(item.cropBottom) && item.cropBottom >= 0 ? item.cropBottom : 0,
@@ -342,6 +347,7 @@ function leaderboardArtworkStyle(source) {
     transform: `translate(${art.x}px, ${art.y}px) scale(${art.scaleX}, ${art.scaleY})`,
     transformOrigin: 'center center',
     opacity: `${art.opacity}`,
+    filter: art.blurPx > 0 ? `blur(${art.blurPx}px)` : 'none',
     clipPath: `inset(${art.cropTop}px ${art.cropRight}px ${art.cropBottom}px ${art.cropLeft}px)`,
     pointerEvents: 'none',
   }
@@ -448,12 +454,31 @@ function leaderboardIconSlotStyle(mod) {
   }
 }
 
-function leaderboardIconStyle(mod) {
+function leaderboardIconStyle(mod, row) {
   const size = leaderboardAppearance(mod).participantIconSizePx
+  const iconBlurPx = typeof row?.iconBlurPx === 'number' && Number.isFinite(row.iconBlurPx) && row.iconBlurPx >= 0 ? row.iconBlurPx : 0
   return {
     width: `${size}px`,
     height: `${size}px`,
+    filter: iconBlurPx > 0 ? `blur(${iconBlurPx}px)` : 'none',
   }
+}
+
+function isAbsoluteFilePath(source) {
+  if (source.startsWith(FILE_URL_PREFIX)) return true
+  if (WINDOWS_ABSOLUTE_PATH_RE.test(source)) return true
+  if (UNC_ABSOLUTE_PATH_RE.test(source)) return true
+  return LIKELY_POSIX_ABSOLUTE_PREFIXES.some(prefix => source.startsWith(prefix))
+}
+
+function resolveRenderableImageSrc(source) {
+  if (typeof source !== 'string') return ''
+  const normalized = source.trim()
+  if (!normalized) return ''
+  if (isAbsoluteFilePath(normalized)) {
+    return `/api/local-image?path=${encodeURIComponent(normalized)}`
+  }
+  return normalized
 }
 
 function sortedLeaderboardRows(mod) {

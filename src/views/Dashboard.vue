@@ -747,6 +747,17 @@
                   />
                 </div>
                 <div class="edit-row participant-extra-edit-row">
+                  <label class="edit-label">Icon Blur</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.5"
+                    :value="participant.iconBlurPx ?? 0"
+                    @change="updateLeaderboardParticipant(mod, participant.id, { iconBlurPx: $event.target.valueAsNumber })"
+                  />
+                  <span class="edit-unit">px</span>
+                </div>
+                <div class="edit-row participant-extra-edit-row">
                   <label class="edit-label">Backdrop</label>
                   <input
                     type="text"
@@ -755,6 +766,17 @@
                     :value="participant.backdropImage?.src ?? ''"
                     @change="updateLeaderboardParticipant(mod, participant.id, { backdropImage: { src: $event.target.value } })"
                   />
+                </div>
+                <div class="edit-row participant-extra-edit-row">
+                  <label class="edit-label">Backdrop Blur</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.5"
+                    :value="participant.backdropImage?.blurPx ?? 0"
+                    @change="updateLeaderboardParticipant(mod, participant.id, { backdropImage: { blurPx: $event.target.valueAsNumber } })"
+                  />
+                  <span class="edit-unit">px</span>
                 </div>
                 <div class="edit-row participant-extra-edit-row">
                   <label class="edit-label">Backdrop Opacity</label>
@@ -1207,6 +1229,7 @@ function leaderboardArt(source) {
     scaleX: typeof item.scaleX === 'number' && Number.isFinite(item.scaleX) ? item.scaleX : 1,
     scaleY: typeof item.scaleY === 'number' && Number.isFinite(item.scaleY) ? item.scaleY : 1,
     opacity: typeof item.opacity === 'number' && Number.isFinite(item.opacity) && item.opacity >= 0 && item.opacity <= 1 ? item.opacity : 1,
+    blurPx: typeof item.blurPx === 'number' && Number.isFinite(item.blurPx) && item.blurPx >= 0 ? item.blurPx : 0,
     cropTop: typeof item.cropTop === 'number' && Number.isFinite(item.cropTop) && item.cropTop >= 0 ? item.cropTop : 0,
     cropRight: typeof item.cropRight === 'number' && Number.isFinite(item.cropRight) && item.cropRight >= 0 ? item.cropRight : 0,
     cropBottom: typeof item.cropBottom === 'number' && Number.isFinite(item.cropBottom) && item.cropBottom >= 0 ? item.cropBottom : 0,
@@ -1427,10 +1450,15 @@ function updateLeaderboardParticipant(mod, participantId, patch) {
       : participant.username
     const score = typeof patch.score === 'number' && Number.isFinite(patch.score) ? patch.score : participant.score
     const iconSrc = typeof patch.iconSrc === 'string' ? patch.iconSrc : (participant.iconSrc ?? '')
+    const iconBlurPx = typeof patch.iconBlurPx === 'number' && Number.isFinite(patch.iconBlurPx) && patch.iconBlurPx >= 0
+      ? patch.iconBlurPx
+      : (typeof participant.iconBlurPx === 'number' && Number.isFinite(participant.iconBlurPx) && participant.iconBlurPx >= 0
+        ? participant.iconBlurPx
+        : 0)
     const backdropImage = patch.backdropImage && typeof patch.backdropImage === 'object'
       ? { ...currentBackdrop, ...patch.backdropImage }
       : currentBackdrop
-    return { ...participant, username, score, iconSrc, backdropImage }
+    return { ...participant, username, score, iconSrc, iconBlurPx, backdropImage }
   })
   patchLeaderboardParticipants(mod, participants)
 }
