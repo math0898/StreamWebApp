@@ -269,6 +269,14 @@ function leaderboardArt(source) {
   }
 }
 
+function leaderboardTextOutline(source) {
+  const item = source && typeof source === 'object' ? source : {}
+  return {
+    sizePx: typeof item.sizePx === 'number' && Number.isFinite(item.sizePx) && item.sizePx >= 0 ? item.sizePx : 0,
+    color: typeof item.color === 'string' && /^#[0-9a-f]{6}$/i.test(item.color) ? item.color : '#000000',
+  }
+}
+
 function leaderboardStyle(mod) {
   const appearance = leaderboardAppearance(mod)
   const bg = parseHexColor(appearance.backgroundColor)
@@ -331,6 +339,9 @@ function leaderboardAppearance(mod) {
     borderColor: typeof source.borderColor === 'string' && /^#[0-9a-f]{6}$/i.test(source.borderColor) ? source.borderColor : '#ffffff',
     borderAlpha: Number.isFinite(Number(source.borderAlpha)) && Number(source.borderAlpha) >= 0 && Number(source.borderAlpha) <= 255 ? Math.round(Number(source.borderAlpha)) : 36,
     backgroundImage: leaderboardArt(source.backgroundImage),
+    titleOutline: leaderboardTextOutline(source.titleOutline),
+    participantOutline: leaderboardTextOutline(source.participantOutline),
+    scoreOutline: leaderboardTextOutline(source.scoreOutline),
     participantIconSizePx: typeof source.participantIconSizePx === 'number' && Number.isFinite(source.participantIconSizePx) && source.participantIconSizePx >= 0 ? source.participantIconSizePx : 24,
     autoHide,
   }
@@ -374,7 +385,11 @@ function leaderboardShellStyle(mod) {
 }
 
 function leaderboardHeaderStyle(mod) {
-  return { color: leaderboardAppearance(mod).textColor }
+  const appearance = leaderboardAppearance(mod)
+  return {
+    color: appearance.textColor,
+    ...leaderboardOutlineStyle(appearance.titleOutline),
+  }
 }
 
 function parseHexColor(hex) {
@@ -433,12 +448,36 @@ function leaderboardUsernameStyle(mod, row) {
   const appearance = leaderboardAppearance(mod)
   return {
     color: appearance.usernameColors[row.id] ?? appearance.defaultUsernameColor,
+    ...leaderboardOutlineStyle(appearance.participantOutline),
   }
 }
 
 function leaderboardNumberStyle(mod, row) {
+  const appearance = leaderboardAppearance(mod)
   return {
     color: leaderboardNumberColor(mod, row),
+    ...leaderboardOutlineStyle(appearance.scoreOutline),
+  }
+}
+
+function leaderboardOutlineStyle(source) {
+  const outline = leaderboardTextOutline(source)
+  if (!(outline.sizePx > 0)) return {}
+  const width = outline.sizePx
+  const color = outline.color
+  return {
+    WebkitTextStroke: `${width}px ${color}`,
+    paintOrder: 'stroke fill',
+    textShadow: [
+      `${width}px 0 ${color}`,
+      `${-width}px 0 ${color}`,
+      `0 ${width}px ${color}`,
+      `0 ${-width}px ${color}`,
+      `${width}px ${width}px ${color}`,
+      `${width}px ${-width}px ${color}`,
+      `${-width}px ${width}px ${color}`,
+      `${-width}px ${-width}px ${color}`,
+    ].join(', '),
   }
 }
 

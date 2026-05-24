@@ -17,6 +17,10 @@ export const DEFAULT_LEADERBOARD_ART = {
   cropBottom: 0,
   cropLeft: 0,
 }
+export const DEFAULT_LEADERBOARD_TEXT_OUTLINE = {
+  sizePx: 0,
+  color: '#000000',
+}
 
 export const MODULE_TYPES = new Set(['progressBar', 'image', 'text', 'dj', 'leaderboard'])
 
@@ -70,6 +74,9 @@ export const FACTORY_MODULE_DEFAULTS = {
       borderColor: '#ffffff',
       borderAlpha: 36,
       backgroundImage: { ...DEFAULT_LEADERBOARD_ART },
+      titleOutline: { ...DEFAULT_LEADERBOARD_TEXT_OUTLINE },
+      participantOutline: { ...DEFAULT_LEADERBOARD_TEXT_OUTLINE },
+      scoreOutline: { ...DEFAULT_LEADERBOARD_TEXT_OUTLINE },
       participantIconSizePx: 24,
       autoHide: {
         enabled: false,
@@ -131,6 +138,14 @@ function sanitizeLeaderboardArt(raw, fallback = DEFAULT_LEADERBOARD_ART) {
     cropRight: sanitizeNonNegative(source.cropRight, fallback.cropRight),
     cropBottom: sanitizeNonNegative(source.cropBottom, fallback.cropBottom),
     cropLeft: sanitizeNonNegative(source.cropLeft, fallback.cropLeft),
+  }
+}
+
+function sanitizeLeaderboardTextOutline(raw, fallback = DEFAULT_LEADERBOARD_TEXT_OUTLINE) {
+  const source = raw && typeof raw === 'object' ? raw : {}
+  return {
+    sizePx: sanitizeNonNegative(source.sizePx, fallback.sizePx ?? 0),
+    color: sanitizeHexColor(source.color, fallback.color ?? '#000000'),
   }
 }
 
@@ -202,6 +217,9 @@ function sanitizeLeaderboardAppearance(raw, fallback = FACTORY_MODULE_DEFAULTS.l
     borderColor: sanitizeHexColor(source.borderColor, fallback.borderColor ?? '#ffffff'),
     borderAlpha: sanitizeAlpha(source.borderAlpha, fallback.borderAlpha ?? 36),
     backgroundImage: sanitizeLeaderboardArt(source.backgroundImage, fallback.backgroundImage ?? DEFAULT_LEADERBOARD_ART),
+    titleOutline: sanitizeLeaderboardTextOutline(source.titleOutline, fallback.titleOutline ?? DEFAULT_LEADERBOARD_TEXT_OUTLINE),
+    participantOutline: sanitizeLeaderboardTextOutline(source.participantOutline, fallback.participantOutline ?? DEFAULT_LEADERBOARD_TEXT_OUTLINE),
+    scoreOutline: sanitizeLeaderboardTextOutline(source.scoreOutline, fallback.scoreOutline ?? DEFAULT_LEADERBOARD_TEXT_OUTLINE),
     participantIconSizePx: sanitizeNonNegative(source.participantIconSizePx, fallback.participantIconSizePx ?? 24),
     autoHide,
   }
@@ -472,6 +490,15 @@ class LeaderboardModule extends AbstractModule {
         backgroundImage: incoming.backgroundImage && typeof incoming.backgroundImage === 'object'
           ? { ...this.appearance.backgroundImage, ...incoming.backgroundImage }
           : this.appearance.backgroundImage,
+        titleOutline: incoming.titleOutline && typeof incoming.titleOutline === 'object'
+          ? { ...this.appearance.titleOutline, ...incoming.titleOutline }
+          : this.appearance.titleOutline,
+        participantOutline: incoming.participantOutline && typeof incoming.participantOutline === 'object'
+          ? { ...this.appearance.participantOutline, ...incoming.participantOutline }
+          : this.appearance.participantOutline,
+        scoreOutline: incoming.scoreOutline && typeof incoming.scoreOutline === 'object'
+          ? { ...this.appearance.scoreOutline, ...incoming.scoreOutline }
+          : this.appearance.scoreOutline,
         autoHide: incoming.autoHide && typeof incoming.autoHide === 'object'
           ? {
             ...this.appearance.autoHide,
@@ -513,6 +540,9 @@ class LeaderboardModule extends AbstractModule {
         usernameColors: { ...this.appearance.usernameColors },
         numberColorKeys: this.appearance.numberColorKeys.map(item => ({ ...item })),
         backgroundImage: { ...this.appearance.backgroundImage },
+        titleOutline: { ...this.appearance.titleOutline },
+        participantOutline: { ...this.appearance.participantOutline },
+        scoreOutline: { ...this.appearance.scoreOutline },
         autoHide: {
           ...this.appearance.autoHide,
           animation: { ...this.appearance.autoHide.animation },

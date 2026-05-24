@@ -553,6 +553,27 @@
               </div>
               <button class="counter-btn-sm" @click="addLeaderboardNumberColorKey(mod)">+ Add Score Key</button>
             </template>
+            <p class="edit-sub">Text Outline</p>
+            <div
+              v-for="field in leaderboardOutlineFields"
+              :key="`${mod.id}-${field.key}`"
+              class="edit-row"
+            >
+              <label class="edit-label">{{ field.label }}</label>
+              <input
+                type="color"
+                :value="leaderboardAppearance(mod)[field.key].color"
+                @input="patchLeaderboardTextOutline(mod, field.key, { color: $event.target.value })"
+              />
+              <input
+                type="number"
+                min="0"
+                step="0.5"
+                :value="leaderboardAppearance(mod)[field.key].sizePx"
+                @change="patchLeaderboardTextOutline(mod, field.key, { sizePx: $event.target.valueAsNumber })"
+              />
+              <span class="edit-unit">px</span>
+            </div>
             <p class="edit-sub">Artwork</p>
             <div class="edit-row">
               <label class="edit-label">Background</label>
@@ -574,6 +595,17 @@
                 :value="leaderboardAppearance(mod).backgroundImage.opacity"
                 @change="patchLeaderboardBackgroundImage(mod, { opacity: $event.target.valueAsNumber })"
               />
+            </div>
+            <div class="edit-row">
+              <label class="edit-label">Background Blur</label>
+              <input
+                type="number"
+                min="0"
+                step="0.5"
+                :value="leaderboardAppearance(mod).backgroundImage.blurPx"
+                @change="patchLeaderboardBackgroundImage(mod, { blurPx: $event.target.valueAsNumber })"
+              />
+              <span class="edit-unit">px</span>
             </div>
             <div class="edit-row">
               <label class="edit-label">Icon Size</label>
@@ -911,6 +943,11 @@ const leaderboardArtFields = [
   { key: 'scaleX', label: 'Scale X', step: 0.1 },
   { key: 'scaleY', label: 'Scale Y', step: 0.1 },
 ]
+const leaderboardOutlineFields = [
+  { key: 'titleOutline', label: 'Title' },
+  { key: 'participantOutline', label: 'Participants' },
+  { key: 'scoreOutline', label: 'Scores' },
+]
 const leaderboardCropFields = [
   { key: 'cropTop', label: 'Crop Top', step: 1 },
   { key: 'cropRight', label: 'Crop Right', step: 1 },
@@ -1237,6 +1274,14 @@ function leaderboardArt(source) {
   }
 }
 
+function leaderboardTextOutline(source) {
+  const item = source && typeof source === 'object' ? source : {}
+  return {
+    sizePx: typeof item.sizePx === 'number' && Number.isFinite(item.sizePx) && item.sizePx >= 0 ? item.sizePx : 0,
+    color: typeof item.color === 'string' && /^#[0-9a-f]{6}$/i.test(item.color) ? item.color : '#000000',
+  }
+}
+
 function leaderboardAppearance(mod) {
   const source = mod?.appearance ?? {}
   const usernameColors = source.usernameColors && typeof source.usernameColors === 'object' && !Array.isArray(source.usernameColors)
@@ -1287,6 +1332,9 @@ function leaderboardAppearance(mod) {
     borderColor: typeof source.borderColor === 'string' && /^#[0-9a-f]{6}$/i.test(source.borderColor) ? source.borderColor : '#ffffff',
     borderAlpha: Number.isFinite(Number(source.borderAlpha)) && Number(source.borderAlpha) >= 0 && Number(source.borderAlpha) <= 255 ? Math.round(Number(source.borderAlpha)) : 36,
     backgroundImage: leaderboardArt(source.backgroundImage),
+    titleOutline: leaderboardTextOutline(source.titleOutline),
+    participantOutline: leaderboardTextOutline(source.participantOutline),
+    scoreOutline: leaderboardTextOutline(source.scoreOutline),
     participantIconSizePx: typeof source.participantIconSizePx === 'number' && Number.isFinite(source.participantIconSizePx) && source.participantIconSizePx >= 0 ? source.participantIconSizePx : 24,
     autoHide,
   }
@@ -1304,6 +1352,15 @@ function patchLeaderboardAppearance(mod, patch) {
     backgroundImage: patch.backgroundImage && typeof patch.backgroundImage === 'object'
       ? { ...current.backgroundImage, ...patch.backgroundImage }
       : current.backgroundImage,
+    titleOutline: patch.titleOutline && typeof patch.titleOutline === 'object'
+      ? { ...current.titleOutline, ...patch.titleOutline }
+      : current.titleOutline,
+    participantOutline: patch.participantOutline && typeof patch.participantOutline === 'object'
+      ? { ...current.participantOutline, ...patch.participantOutline }
+      : current.participantOutline,
+    scoreOutline: patch.scoreOutline && typeof patch.scoreOutline === 'object'
+      ? { ...current.scoreOutline, ...patch.scoreOutline }
+      : current.scoreOutline,
     autoHide: patch.autoHide && typeof patch.autoHide === 'object'
       ? {
         ...current.autoHide,
@@ -1321,6 +1378,15 @@ function patchLeaderboardBackgroundImage(mod, patch) {
   patchLeaderboardAppearance(mod, {
     backgroundImage: {
       ...leaderboardAppearance(mod).backgroundImage,
+      ...patch,
+    },
+  })
+}
+
+function patchLeaderboardTextOutline(mod, key, patch) {
+  patchLeaderboardAppearance(mod, {
+    [key]: {
+      ...leaderboardAppearance(mod)[key],
       ...patch,
     },
   })
