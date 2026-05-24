@@ -39,7 +39,11 @@
             :style="leaderboardShellStyle(mod)"
           >
             <div class="leaderboard-module" :style="leaderboardStyle(mod)">
-              <div v-if="leaderboardAppearance(mod).backgroundImage.src" class="leaderboard-background-art">
+              <div
+                v-if="leaderboardAppearance(mod).backgroundImage.src"
+                class="leaderboard-background-art"
+                :style="leaderboardArtworkCropStyle(leaderboardAppearance(mod).backgroundImage)"
+              >
                 <img
                   :src="resolveLeaderboardImageSrc(leaderboardAppearance(mod).backgroundImage.src, mod.id, null, 'background')"
                   alt=""
@@ -62,7 +66,11 @@
                   }"
                   :style="leaderboardRowStyle(mod, row)"
                 >
-                  <div v-if="row.backdropImage?.src" class="leaderboard-row-backdrop">
+                  <div
+                    v-if="row.backdropImage?.src"
+                    class="leaderboard-row-backdrop"
+                    :style="leaderboardArtworkCropStyle(row.backdropImage)"
+                  >
                     <img :src="resolveLeaderboardImageSrc(row.backdropImage.src, mod.id, row.id, 'backdrop')" alt="" :style="leaderboardArtworkStyle(row.backdropImage)" />
                   </div>
                   <span v-if="leaderboardAppearance(mod).showRankNumbers" class="leaderboard-rank" :style="leaderboardNumberStyle(mod, row)">#{{ row.rank }}</span>
@@ -359,8 +367,15 @@ function leaderboardArtworkStyle(source) {
     transformOrigin: 'center center',
     opacity: `${art.opacity}`,
     filter: art.blurPx > 0 ? `blur(${art.blurPx}px)` : 'none',
-    clipPath: `inset(${art.cropTop}px ${art.cropRight}px ${art.cropBottom}px ${art.cropLeft}px)`,
     pointerEvents: 'none',
+  }
+}
+
+function leaderboardArtworkCropStyle(source) {
+  const art = leaderboardArt(source)
+  if (!(art.cropTop || art.cropRight || art.cropBottom || art.cropLeft)) return {}
+  return {
+    clipPath: `inset(${art.cropTop}px ${art.cropRight}px ${art.cropBottom}px ${art.cropLeft}px)`,
   }
 }
 
@@ -956,6 +971,9 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  position: relative;
+  overflow: hidden;
+  border-radius: 6px;
 }
 
 .leaderboard-participant-icon {
