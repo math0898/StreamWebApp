@@ -446,9 +446,16 @@ function leaderboardRowStyle(mod, row) {
 
 function leaderboardUsernameStyle(mod, row) {
   const appearance = leaderboardAppearance(mod)
+  const outline = leaderboardTextOutline(appearance.participantOutline)
   return {
     color: appearance.usernameColors[row.id] ?? appearance.defaultUsernameColor,
-    ...leaderboardOutlineStyle(appearance.participantOutline),
+    ...leaderboardOutlineStyle(outline),
+    ...(outline.sizePx > 0
+      ? {
+          boxSizing: 'border-box',
+          paddingInline: `${outline.sizePx}px`,
+        }
+      : {}),
   }
 }
 
