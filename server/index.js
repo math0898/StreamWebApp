@@ -135,6 +135,18 @@ function isPathWithinRoot(candidatePath, allowedRoot) {
   return normalizedCandidate.startsWith(rootPrefix)
 }
 
+function getLeaderboardAbsoluteImagePath(moduleId, participantId, kind) {
+  const active = getActive()
+  const module = active?.modules?.find(item => item?.type === 'leaderboard' && item?.id === moduleId)
+  if (!module) return ''
+  if (kind === 'background') return module.appearance?.backgroundImage?.src ?? ''
+  if (kind !== 'icon' && kind !== 'backdrop') return ''
+  const participant = (module.participants ?? []).find(item => item?.id === participantId)
+  if (!participant) return ''
+  if (kind === 'icon') return participant.iconSrc ?? ''
+  return participant.backdropImage?.src ?? ''
+}
+
 function patchProgressBar(target, patch) {
   if (typeof patch.label === 'string') target.label = patch.label
   if (typeof patch.count === 'number') target.count = patch.count
@@ -1231,9 +1243,22 @@ app.use(express.json({ limit: '50mb' }))
 app.use('/Music', express.static(MUSIC_DIR))
 
 app.get('/api/local-image', localImageLimiter, (req, res) => {
-  const requestedPath = normalizeAbsoluteImagePath(typeof req.query.path === 'string' ? req.query.path : '')
+  const moduleId = typeof req.query.moduleId === 'string' ? req.query.moduleId.trim() : ''
+  const participantId = typeof req.query.participantId === 'string' ? req.query.participantId.trim() : ''
+  const kind = typeof req.query.kind === 'string' ? req.query.kind.trim() : ''
+  if (!moduleId || !['background', 'icon', 'backdrop'].includes(kind)) {
+    return res.status(400).json({ error: 'invalid image request' })
+  }
+  if ((kind === 'icon' || kind === 'backdrop') && !participantId) {
+    return res.status(400).json({ error: 'participantId is required for participant images' })
+  }
+  if (kind === 'background' && participantId) {
+    return res.status(400).json({ error: 'participantId is only valid for participant images' })
+  }
+  const configuredPath = getLeaderboardAbsoluteImagePath(moduleId, participantId, kind)
+  const requestedPath = normalizeAbsoluteImagePath(configuredPath)
   if (!requestedPath || !isAbsoluteFilePath(requestedPath)) {
-    return res.status(400).json({ error: 'path must be an absolute file path' })
+    return res.status(404).json({ error: 'image not found or not absolute' })
   }
   const normalizedPath = resolve(requestedPath)
   const extension = extname(normalizedPath).toLowerCase()

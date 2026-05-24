@@ -41,7 +41,7 @@
             <div class="leaderboard-module" :style="leaderboardStyle(mod)">
               <div v-if="leaderboardAppearance(mod).backgroundImage.src" class="leaderboard-background-art">
                 <img
-                  :src="resolveRenderableImageSrc(leaderboardAppearance(mod).backgroundImage.src)"
+                  :src="resolveLeaderboardImageSrc(leaderboardAppearance(mod).backgroundImage.src, mod.id, null, 'background')"
                   alt=""
                   :style="leaderboardArtworkStyle(leaderboardAppearance(mod).backgroundImage)"
                 />
@@ -63,14 +63,14 @@
                   :style="leaderboardRowStyle(mod, row)"
                 >
                   <div v-if="row.backdropImage?.src" class="leaderboard-row-backdrop">
-                    <img :src="resolveRenderableImageSrc(row.backdropImage.src)" alt="" :style="leaderboardArtworkStyle(row.backdropImage)" />
+                    <img :src="resolveLeaderboardImageSrc(row.backdropImage.src, mod.id, row.id, 'backdrop')" alt="" :style="leaderboardArtworkStyle(row.backdropImage)" />
                   </div>
                   <span v-if="leaderboardAppearance(mod).showRankNumbers" class="leaderboard-rank" :style="leaderboardNumberStyle(mod, row)">#{{ row.rank }}</span>
                   <span v-if="leaderboardHasIcons(mod)" class="leaderboard-icon-slot" :style="leaderboardIconSlotStyle(mod)">
                     <img
                       v-if="row.iconSrc"
                       class="leaderboard-participant-icon"
-                      :src="resolveRenderableImageSrc(row.iconSrc)"
+                      :src="resolveLeaderboardImageSrc(row.iconSrc, mod.id, row.id, 'icon')"
                       alt=""
                       :style="leaderboardIconStyle(mod, row)"
                     />
@@ -471,12 +471,17 @@ function isAbsoluteFilePath(source) {
   return LIKELY_POSIX_ABSOLUTE_PREFIXES.some(prefix => source.startsWith(prefix))
 }
 
-function resolveRenderableImageSrc(source) {
+function resolveLeaderboardImageSrc(source, moduleId, participantId, kind) {
   if (typeof source !== 'string') return ''
   const normalized = source.trim()
   if (!normalized) return ''
   if (isAbsoluteFilePath(normalized)) {
-    return `/api/local-image?path=${encodeURIComponent(normalized)}`
+    const params = new URLSearchParams({
+      moduleId: moduleId ?? '',
+      kind,
+    })
+    if (participantId) params.set('participantId', participantId)
+    return `/api/local-image?${params.toString()}`
   }
   return normalized
 }
