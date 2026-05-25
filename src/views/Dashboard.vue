@@ -77,18 +77,18 @@
           Normalize Volume
         </label>
         <label class="music-inline-option">
-          Level
+          Target
           <input
             type="number"
-            min="0"
-            max="100"
-            step="1"
+            min="-36"
+            max="0"
+            step="0.5"
             class="music-inline-number"
             :disabled="!popupSettings.normalizeVolume"
-            :value="popupSettings.normalizedVolumePct"
-            @change="patchPopupSettings({ normalizedVolumePct: $event.target.valueAsNumber })"
+            :value="popupSettings.normalizedVolumeDb"
+            @change="patchPopupSettings({ normalizedVolumeDb: $event.target.valueAsNumber })"
           />
-          %
+          dB
         </label>
       </div>
 
@@ -900,7 +900,7 @@ const popupSettings = reactive({
   hiddenVisual: false,
   defaultPlayMusic: true,
   normalizeVolume: false,
-  normalizedVolumePct: 100,
+  normalizedVolumeDb: -16,
   animation: {
     songStartShowSec: 6,
     songEndShowSec: 3,
@@ -1017,9 +1017,12 @@ function applyPopupSettings(nextSettings) {
   popupSettings.hiddenVisual = !!nextSettings?.hiddenVisual
   popupSettings.defaultPlayMusic = typeof nextSettings?.defaultPlayMusic === 'boolean' ? nextSettings.defaultPlayMusic : true
   popupSettings.normalizeVolume = typeof nextSettings?.normalizeVolume === 'boolean' ? nextSettings.normalizeVolume : false
-  popupSettings.normalizedVolumePct = Number.isFinite(nextSettings?.normalizedVolumePct)
-    ? Math.max(0, Math.min(100, nextSettings.normalizedVolumePct))
-    : 100
+  const normalizedVolumeDbFromLegacyPct = Number.isFinite(nextSettings?.normalizedVolumePct)
+    ? Math.max(-36, Math.min(0, 20 * Math.log10(Math.max(0.0001, nextSettings.normalizedVolumePct / 100))))
+    : null
+  popupSettings.normalizedVolumeDb = Number.isFinite(nextSettings?.normalizedVolumeDb)
+    ? Math.max(-36, Math.min(0, nextSettings.normalizedVolumeDb))
+    : (normalizedVolumeDbFromLegacyPct ?? -16)
   popupSettings.animation.songStartShowSec = nextSettings?.animation?.songStartShowSec ?? 6
   popupSettings.animation.songEndShowSec = nextSettings?.animation?.songEndShowSec ?? 3
   popupSettings.animation.periodicIntervalSec = nextSettings?.animation?.periodicIntervalSec ?? 45
@@ -1555,8 +1558,8 @@ async function patchPopupSettings(patch) {
   if (typeof patch.hiddenVisual === 'boolean') popupSettings.hiddenVisual = patch.hiddenVisual
   if (typeof patch.defaultPlayMusic === 'boolean') popupSettings.defaultPlayMusic = patch.defaultPlayMusic
   if (typeof patch.normalizeVolume === 'boolean') popupSettings.normalizeVolume = patch.normalizeVolume
-  if (typeof patch.normalizedVolumePct === 'number' && Number.isFinite(patch.normalizedVolumePct)) {
-    popupSettings.normalizedVolumePct = Math.max(0, Math.min(100, patch.normalizedVolumePct))
+  if (typeof patch.normalizedVolumeDb === 'number' && Number.isFinite(patch.normalizedVolumeDb)) {
+    popupSettings.normalizedVolumeDb = Math.max(-36, Math.min(0, patch.normalizedVolumeDb))
   }
   if (patch.animation && typeof patch.animation === 'object') {
     if (typeof patch.animation.songStartShowSec === 'number' && Number.isFinite(patch.animation.songStartShowSec)) {

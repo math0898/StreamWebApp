@@ -59,7 +59,7 @@ const DEFAULT_NOW_PLAYING_POPUP = {
   hiddenVisual: false,
   defaultPlayMusic: true,
   normalizeVolume: false,
-  normalizedVolumePct: 100,
+  normalizedVolumeDb: -16,
   animation: {
     songStartShowSec: 6,
     songEndShowSec: 3,
@@ -71,6 +71,8 @@ const DEFAULT_NOW_PLAYING_POPUP = {
     motionInterpolation: 'linear',
   },
 }
+const MIN_NORMALIZED_VOLUME_DB = -36
+const MAX_NORMALIZED_VOLUME_DB = 0
 const musicDebugMessages = []
 // Limit import bursts to reduce abuse of repeated file-write operations.
 const musicImportLimiter = rateLimit({
@@ -290,6 +292,12 @@ function patchLeaderboard(target, patch) {
 
 function normalizeNowPlayingPopup(savedPopup) {
   const animation = savedPopup?.animation ?? {}
+  const normalizeVolumeDbFromLegacyPct = Number.isFinite(savedPopup?.normalizedVolumePct)
+    ? Math.max(MIN_NORMALIZED_VOLUME_DB, Math.min(MAX_NORMALIZED_VOLUME_DB, 20 * Math.log10(Math.max(0.0001, savedPopup.normalizedVolumePct / 100))))
+    : null
+  const normalizeVolumeDb = typeof savedPopup?.normalizedVolumeDb === 'number' && Number.isFinite(savedPopup.normalizedVolumeDb)
+    ? Math.max(MIN_NORMALIZED_VOLUME_DB, Math.min(MAX_NORMALIZED_VOLUME_DB, savedPopup.normalizedVolumeDb))
+    : (normalizeVolumeDbFromLegacyPct ?? DEFAULT_NOW_PLAYING_POPUP.normalizedVolumeDb)
   return {
     x: typeof savedPopup?.x === 'number' ? savedPopup.x : DEFAULT_NOW_PLAYING_POPUP.x,
     y: typeof savedPopup?.y === 'number' ? savedPopup.y : DEFAULT_NOW_PLAYING_POPUP.y,
@@ -300,9 +308,7 @@ function normalizeNowPlayingPopup(savedPopup) {
     normalizeVolume: typeof savedPopup?.normalizeVolume === 'boolean'
       ? savedPopup.normalizeVolume
       : DEFAULT_NOW_PLAYING_POPUP.normalizeVolume,
-    normalizedVolumePct: typeof savedPopup?.normalizedVolumePct === 'number' && Number.isFinite(savedPopup.normalizedVolumePct)
-      ? Math.max(0, Math.min(100, savedPopup.normalizedVolumePct))
-      : DEFAULT_NOW_PLAYING_POPUP.normalizedVolumePct,
+    normalizedVolumeDb: normalizeVolumeDb,
     animation: {
       songStartShowSec: typeof animation.songStartShowSec === 'number' && animation.songStartShowSec >= 0
         ? animation.songStartShowSec
@@ -339,8 +345,16 @@ function patchNowPlayingPopup(target, patch) {
   if (typeof patch.hiddenVisual === 'boolean') target.hiddenVisual = patch.hiddenVisual
   if (typeof patch.defaultPlayMusic === 'boolean') target.defaultPlayMusic = patch.defaultPlayMusic
   if (typeof patch.normalizeVolume === 'boolean') target.normalizeVolume = patch.normalizeVolume
-  if (typeof patch.normalizedVolumePct === 'number' && Number.isFinite(patch.normalizedVolumePct)) {
-    target.normalizedVolumePct = Math.max(0, Math.min(100, patch.normalizedVolumePct))
+  if (typeof patch.normalizedVolumeDb === 'number' && Number.isFinite(patch.normalizedVolumeDb)) {
+    target.normalizedVolumeDb = Math.max(MIN_NORMALIZED_VOLUME_DB, Math.min(MAX_NORMALIZED_VOLUME_DB, patch.normalizedVolumeDb))
+  } else if (typeof patch.normalizedVolumePct === 'number' && Number.isFinite(patch.normalizedVolumePct)) {
+    target.normalizedVolumeDb = Math.max(
+      MIN_NORMALIZED_VOLUME_DB,
+      Math.min(
+        MAX_NORMALIZED_VOLUME_DB,
+        20 * Math.log10(Math.max(0.0001, patch.normalizedVolumePct / 100)),
+      ),
+    )
   }
   if (patch.animation && typeof patch.animation === 'object') {
     if (typeof patch.animation.songStartShowSec === 'number' && patch.animation.songStartShowSec >= 0) {

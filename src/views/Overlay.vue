@@ -124,13 +124,17 @@ const audioRef = ref(null)
 const musicProgressPct = ref(0)
 const PROGRESS_UPDATE_INTERVAL_MS = 250
 const SYNC_TOLERANCE_SEC = 1
+const MIN_NORMALIZED_VOLUME_DB = -36
+const MAX_NORMALIZED_VOLUME_DB = 0
+const MIN_TRACK_GAIN_DB = -24
+const MAX_TRACK_GAIN_DB = 24
 const popupConfig = ref({
   x: 0,
   y: 0,
   hiddenVisual: false,
   defaultPlayMusic: true,
   normalizeVolume: false,
-  normalizedVolumePct: 100,
+  normalizedVolumeDb: -16,
   animation: {
     songStartShowSec: 6,
     songEndShowSec: 3,
@@ -149,6 +153,12 @@ let popupEndTimer = null
 let popupPeriodicTimer = null
 let source = null
 let skipInFlight = false
+let audioContext = null
+let mediaSourceNode = null
+let normalizeGainNode = null
+let compressorNode = null
+let normalizationRequestToken = 0
+const trackLoudnessDbCache = new Map()
 
 // Leaderboard auto-hide state
 const leaderboardVisualHidden = reactive({})
@@ -623,15 +633,18 @@ function computeElapsedSec(snapshot, nowMs = Date.now()) {
 
 function normalizePopupConfig(rawConfig) {
   const animation = rawConfig?.animation ?? {}
+  const normalizedVolumeDbFromLegacyPct = Number.isFinite(rawConfig?.normalizedVolumePct)
+    ? Math.max(MIN_NORMALIZED_VOLUME_DB, Math.min(MAX_NORMALIZED_VOLUME_DB, 20 * Math.log10(Math.max(0.0001, rawConfig.normalizedVolumePct / 100))))
+    : null
   popupConfig.value = {
     x: typeof rawConfig?.x === 'number' ? rawConfig.x : 0,
     y: typeof rawConfig?.y === 'number' ? rawConfig.y : 0,
     hiddenVisual: typeof rawConfig?.hiddenVisual === 'boolean' ? rawConfig.hiddenVisual : false,
     defaultPlayMusic: typeof rawConfig?.defaultPlayMusic === 'boolean' ? rawConfig.defaultPlayMusic : true,
     normalizeVolume: typeof rawConfig?.normalizeVolume === 'boolean' ? rawConfig.normalizeVolume : false,
-    normalizedVolumePct: typeof rawConfig?.normalizedVolumePct === 'number' && Number.isFinite(rawConfig.normalizedVolumePct)
-      ? Math.max(0, Math.min(100, rawConfig.normalizedVolumePct))
-      : 100,
+    normalizedVolumeDb: typeof rawConfig?.normalizedVolumeDb === 'number' && Number.isFinite(rawConfig.normalizedVolumeDb)
+      ? Math.max(MIN_NORMALIZED_VOLUME_DB, Math.min(MAX_NORMALIZED_VOLUME_DB, rawConfig.normalizedVolumeDb))
+      : (normalizedVolumeDbFromLegacyPct ?? -16),
     animation: {
       songStartShowSec: typeof animation.songStartShowSec === 'number' && animation.songStartShowSec >= 0 ? animation.songStartShowSec : 6,
       songEndShowSec: typeof animation.songEndShowSec === 'number' && animation.songEndShowSec >= 0 ? animation.songEndShowSec : 3,
@@ -644,6 +657,123 @@ function normalizePopupConfig(rawConfig) {
     },
   }
   if (popupConfig.value.hiddenVisual) popupVisible.value = false
+  void applyMusicGainForCurrentTrack()
+}
+
+function ensureAudioGraph() {
+  const audio = audioRef.value
+  if (!audio || typeof window === 'undefined') return false
+  if (normalizeGainNode && audioContext) return true
+  const AudioContextCtor = window.AudioContext || window.webkitAudioContext
+  if (!AudioContextCtor) return false
+  try {
+    audioContext = audioContext ?? new AudioContextCtor()
+    mediaSourceNode = mediaSourceNode ?? audioContext.createMediaElementSource(audio)
+    normalizeGainNode = normalizeGainNode ?? audioContext.createGain()
+    compressorNode = compressorNode ?? audioContext.createDynamicsCompressor()
+    compressorNode.threshold.setValueAtTime(-6, audioContext.currentTime)
+    compressorNode.knee.setValueAtTime(12, audioContext.currentTime)
+    compressorNode.ratio.setValueAtTime(8, audioContext.currentTime)
+    compressorNode.attack.setValueAtTime(0.003, audioContext.currentTime)
+    compressorNode.release.setValueAtTime(0.25, audioContext.currentTime)
+    mediaSourceNode.connect(normalizeGainNode)
+    normalizeGainNode.connect(compressorNode)
+    compressorNode.connect(audioContext.destination)
+    return true
+  } catch (err) {
+    console.warn('[overlay] Failed to create audio normalization graph.', err)
+    return false
+  }
+}
+
+function setGainDb(gainDb, immediate = false) {
+  if (!ensureAudioGraph()) return false
+  const safeDb = Number.isFinite(gainDb) ? gainDb : 0
+  const linear = Math.pow(10, safeDb / 20)
+  const time = audioContext.currentTime
+  normalizeGainNode.gain.cancelScheduledValues(time)
+  if (immediate) {
+    normalizeGainNode.gain.setValueAtTime(linear, time)
+  } else {
+    normalizeGainNode.gain.setTargetAtTime(linear, time, 0.2)
+  }
+  return true
+}
+
+function computeBufferLoudnessDb(audioBuffer) {
+  if (!audioBuffer || typeof audioBuffer.length !== 'number' || audioBuffer.length <= 0 || audioBuffer.numberOfChannels <= 0) return -24
+  const stride = 32
+  let sumSquares = 0
+  let count = 0
+  for (let channel = 0; channel < audioBuffer.numberOfChannels; channel += 1) {
+    const data = audioBuffer.getChannelData(channel)
+    for (let i = 0; i < data.length; i += stride) {
+      const sample = data[i]
+      sumSquares += sample * sample
+      count += 1
+    }
+  }
+  if (count === 0) return -24
+  const rms = Math.sqrt(sumSquares / count)
+  return 20 * Math.log10(Math.max(0.0001, rms))
+}
+
+async function getTrackLoudnessDb(audioPath) {
+  if (typeof audioPath !== 'string' || !audioPath.trim()) return -24
+  const normalizedPath = audioPath.trim()
+  if (trackLoudnessDbCache.has(normalizedPath)) return trackLoudnessDbCache.get(normalizedPath)
+  if (!ensureAudioGraph()) return -24
+  const res = await fetch(normalizedPath)
+  if (!res.ok) throw new Error(`Failed to fetch track (${res.status})`)
+  const bytes = await res.arrayBuffer()
+  const decoded = await audioContext.decodeAudioData(bytes.slice(0))
+  const loudnessDb = computeBufferLoudnessDb(decoded)
+  trackLoudnessDbCache.set(normalizedPath, loudnessDb)
+  return loudnessDb
+}
+
+function applyFallbackVolumeWithoutBoost() {
+  const audio = audioRef.value
+  if (!audio) return
+  if (popupConfig.value.normalizeVolume) {
+    const linear = Math.pow(10, popupConfig.value.normalizedVolumeDb / 20)
+    audio.volume = Math.max(0, Math.min(1, linear))
+  } else {
+    audio.volume = 1
+  }
+}
+
+async function applyMusicGainForCurrentTrack() {
+  const audio = audioRef.value
+  const currentPath = music.value?.song?.audioPath
+  const requestToken = ++normalizationRequestToken
+  if (!audio) return
+  if (!popupConfig.value.normalizeVolume) {
+    if (!setGainDb(0, true)) applyFallbackVolumeWithoutBoost()
+    return
+  }
+  if (!currentPath) {
+    if (!setGainDb(0, true)) applyFallbackVolumeWithoutBoost()
+    return
+  }
+  if (!setGainDb(0, true)) {
+    applyFallbackVolumeWithoutBoost()
+    return
+  }
+  try {
+    const loudnessDb = await getTrackLoudnessDb(currentPath)
+    if (requestToken !== normalizationRequestToken) return
+    if (!popupConfig.value.normalizeVolume || currentPath !== music.value?.song?.audioPath) return
+    const gainDb = Math.max(
+      MIN_TRACK_GAIN_DB,
+      Math.min(MAX_TRACK_GAIN_DB, popupConfig.value.normalizedVolumeDb - loudnessDb),
+    )
+    setGainDb(gainDb)
+    audio.volume = 1
+  } catch (err) {
+    console.warn('[overlay] Failed to analyze track loudness for normalization.', err)
+    applyFallbackVolumeWithoutBoost()
+  }
 }
 
 function showPopupFor(showDurationSec) {
@@ -714,13 +844,16 @@ function syncMusic(snapshot) {
   if (snapshot.status === 'paused') {
     audio.pause()
   } else {
+    if (audioContext?.state === 'suspended') {
+      audioContext.resume().catch((err) => {
+        console.warn('[overlay] Failed to resume audio context.', err)
+      })
+    }
     audio.play().catch((err) => {
       console.warn('[overlay] Audio playback request failed.', err)
     })
   }
-  audio.volume = popupConfig.value.normalizeVolume
-    ? Math.max(0, Math.min(1, popupConfig.value.normalizedVolumePct / 100))
-    : 1
+  void applyMusicGainForCurrentTrack()
 
   resetPopupTimers(snapshot)
   if (snapshot.sequence !== previousSequence) {
@@ -783,6 +916,7 @@ const popupStyle = computed(() => {
 })
 
 onMounted(() => {
+  ensureAudioGraph()
   source = new EventSource('/api/events')
   source.onmessage = (event) => {
     const data = JSON.parse(event.data)
@@ -804,6 +938,7 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  normalizationRequestToken += 1
   source?.close()
   audioRef.value?.removeEventListener('ended', skipAfterTrackEnded)
   if (progressTimer) clearInterval(progressTimer)
@@ -812,6 +947,14 @@ onUnmounted(() => {
   if (popupPeriodicTimer) clearInterval(popupPeriodicTimer)
   for (const modId of Object.keys(leaderboardHideTimers)) clearTimeout(leaderboardHideTimers[modId])
   for (const modId of Object.keys(leaderboardPeriodicTimers)) clearInterval(leaderboardPeriodicTimers[modId])
+  if (mediaSourceNode) mediaSourceNode.disconnect()
+  if (normalizeGainNode) normalizeGainNode.disconnect()
+  if (compressorNode) compressorNode.disconnect()
+  if (audioContext) audioContext.close().catch(() => {})
+  mediaSourceNode = null
+  normalizeGainNode = null
+  compressorNode = null
+  audioContext = null
 })
 </script>
 
