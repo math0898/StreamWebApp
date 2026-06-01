@@ -1,9 +1,10 @@
 import express from 'express'
 import { rateLimit } from 'express-rate-limit'
 import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync } from 'fs'
-import { join, dirname, extname } from 'path'
+import { join, dirname, extname, isAbsolute, resolve, sep } from 'path'
 import { fileURLToPath } from 'url'
 import { randomUUID } from 'crypto'
+import { homedir } from 'os'
 import {
   MODULE_TYPES,
   FACTORY_MODULE_DEFAULTS,
@@ -12,6 +13,7 @@ import {
   DEFAULT_VALUE,
   DEFAULT_IMAGE_TRANSFORM,
   DEFAULT_TEXT_TRANSFORM,
+  DEFAULT_LEADERBOARD_TRANSFORM,
   mergeModule as mergeOverlayModule,
   newModule as createModule,
   patchModule as patchOverlayModule,
@@ -33,12 +35,16 @@ const MAX_DEBUG_MESSAGES = 120
 const MAX_RECENTLY_PLAYED = 200
 const IMPORT_RATE_LIMIT_WINDOW_MS = 60_000
 const IMPORT_RATE_LIMIT_MAX_REQUESTS = 8
+const LOCAL_IMAGE_RATE_LIMIT_WINDOW_MS = 60_000
+const LOCAL_IMAGE_RATE_LIMIT_MAX_REQUESTS = 120
 const DOT_CHAR_CODE = '.'.charCodeAt(0)
 const ALBUM_FOLDER_SEPARATOR = ' - '
 const AUDIO_EXTENSIONS = new Set(['.mp3', '.ogg', '.wav'])
 const IMAGE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.webp'])
 const AUDIO_MIME_TYPES = new Set(['audio/mpeg', 'audio/ogg', 'audio/wav', 'audio/x-wav'])
 const IMAGE_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp'])
+const WINDOWS_ABSOLUTE_PATH_RE = /^[a-zA-Z]:[\\/]/
+const UNC_ABSOLUTE_PATH_RE = /^\\\\[^\\]+\\[^\\]+/
 const DEFAULT_SONG = {
   title: 'Default Song',
   artist: 'Unknown Artist',
@@ -52,6 +58,8 @@ const DEFAULT_NOW_PLAYING_POPUP = {
   y: 0,
   hiddenVisual: false,
   defaultPlayMusic: true,
+  normalizeVolume: false,
+  normalizedVolumeDb: -16,
   animation: {
     songStartShowSec: 6,
     songEndShowSec: 3,
@@ -63,6 +71,8 @@ const DEFAULT_NOW_PLAYING_POPUP = {
     motionInterpolation: 'linear',
   },
 }
+const MIN_NORMALIZED_VOLUME_DB = -36
+const MAX_NORMALIZED_VOLUME_DB = 0
 const musicDebugMessages = []
 // Limit import bursts to reduce abuse of repeated file-write operations.
 const musicImportLimiter = rateLimit({
@@ -72,8 +82,72 @@ const musicImportLimiter = rateLimit({
   legacyHeaders: false,
   message: { error: 'Too many import attempts. Please wait and try again.' },
 })
+const localImageLimiter = rateLimit({
+  windowMs: LOCAL_IMAGE_RATE_LIMIT_WINDOW_MS,
+  limit: LOCAL_IMAGE_RATE_LIMIT_MAX_REQUESTS,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many image path requests. Please wait and try again.' },
+})
+const LOCAL_IMAGE_ALLOWED_ROOTS = (() => {
+  const configured = (process.env.LOCAL_IMAGE_ALLOWED_ROOTS ?? '')
+    .split(',')
+    .map(item => item.trim())
+    .filter(Boolean)
+  const roots = configured.length > 0 ? configured : [PUBLIC_DIR, homedir()]
+  return [...new Set(roots.map(item => resolve(item)))]
+})()
 
 function newId() { return randomUUID().slice(0, 8) }
+
+function isAbsoluteFilePath(rawPath) {
+  if (typeof rawPath !== 'string') return false
+  if (isAbsolute(rawPath)) return true
+  if (WINDOWS_ABSOLUTE_PATH_RE.test(rawPath)) return true
+  if (UNC_ABSOLUTE_PATH_RE.test(rawPath)) return true
+  return false
+}
+
+function normalizeAbsoluteImagePath(rawPath) {
+  if (typeof rawPath !== 'string') return ''
+  const trimmed = rawPath.trim()
+  if (!trimmed) return ''
+  if (trimmed.startsWith('file://')) {
+    try {
+      const asUrl = new URL(trimmed)
+      const decodedPath = decodeURIComponent(asUrl.pathname)
+      return decodedPath.replace(/^\/([a-zA-Z]:[\\/])/, '$1')
+    } catch {
+      return ''
+    }
+  }
+  return trimmed
+}
+
+function normalizeForPathCompare(value) {
+  if (process.platform === 'win32') return value.toLowerCase()
+  return value
+}
+
+function isPathWithinRoot(candidatePath, allowedRoot) {
+  const normalizedCandidate = normalizeForPathCompare(resolve(candidatePath))
+  const normalizedRoot = normalizeForPathCompare(resolve(allowedRoot))
+  if (normalizedCandidate === normalizedRoot) return true
+  const rootPrefix = normalizedRoot.endsWith(sep) ? normalizedRoot : `${normalizedRoot}${sep}`
+  return normalizedCandidate.startsWith(rootPrefix)
+}
+
+function getLeaderboardAbsoluteImagePath(moduleId, participantId, kind) {
+  const active = getActive()
+  const module = active?.modules?.find(item => item?.type === 'leaderboard' && item?.id === moduleId)
+  if (!module) return ''
+  if (kind === 'background') return module.appearance?.backgroundImage?.src ?? ''
+  if (kind !== 'icon' && kind !== 'backdrop') return ''
+  const participant = (module.participants ?? []).find(item => item?.id === participantId)
+  if (!participant) return ''
+  if (kind === 'icon') return participant.iconSrc ?? ''
+  return participant.backdropImage?.src ?? ''
+}
 
 function patchProgressBar(target, patch) {
   if (typeof patch.label === 'string') target.label = patch.label
@@ -129,8 +203,101 @@ function patchText(target, patch) {
   }
 }
 
+function sanitizeHexColor(raw, fallback) {
+  if (typeof raw !== 'string') return fallback
+  const normalized = raw.trim().toLowerCase()
+  return /^#[0-9a-f]{6}$/i.test(normalized) ? normalized : fallback
+}
+
+function sanitizeLeaderboardAppearance(raw, fallback = FACTORY_MODULE_DEFAULTS.leaderboard.appearance) {
+  const source = raw && typeof raw === 'object' ? raw : {}
+  const usernameColors = {}
+  if (source.usernameColors && typeof source.usernameColors === 'object' && !Array.isArray(source.usernameColors)) {
+    for (const [participantId, color] of Object.entries(source.usernameColors)) {
+      if (typeof participantId !== 'string' || !participantId.trim()) continue
+      const normalizedColor = sanitizeHexColor(color, '')
+      if (normalizedColor) usernameColors[participantId] = normalizedColor
+    }
+  }
+
+  const uniqueGradientKeys = new Map()
+  if (Array.isArray(source.numberColorKeys)) {
+    for (const item of source.numberColorKeys) {
+      if (!item || typeof item !== 'object') continue
+      const position = Number(item.position)
+      if (!Number.isFinite(position)) continue
+      const color = sanitizeHexColor(item.color, '')
+      if (!color) continue
+      uniqueGradientKeys.set(position, { position, color })
+    }
+  }
+
+  return {
+    showRankNumbers: typeof source.showRankNumbers === 'boolean'
+      ? source.showRankNumbers
+      : !!fallback.showRankNumbers,
+    textColor: sanitizeHexColor(source.textColor, fallback.textColor),
+    defaultUsernameColor: sanitizeHexColor(source.defaultUsernameColor, fallback.defaultUsernameColor),
+    usernameColors,
+    numberColorMode: source.numberColorMode === 'gradient' ? 'gradient' : 'solid',
+    numberColor: sanitizeHexColor(source.numberColor, fallback.numberColor),
+    numberColorKeys: [...uniqueGradientKeys.values()].sort((a, b) => a.position - b.position),
+    focusHighlightColor: sanitizeHexColor(source.focusHighlightColor, fallback.focusHighlightColor),
+  }
+}
+
+function patchLeaderboard(target, patch) {
+  if (typeof patch.name === 'string' && patch.name.trim()) target.name = patch.name.trim()
+  if (patch.scoreType === 'number' || patch.scoreType === 'time') target.scoreType = patch.scoreType
+  if (typeof patch.topCount === 'number' && patch.topCount >= 1) target.topCount = Math.floor(patch.topCount)
+  if (typeof patch.neighborCount === 'number' && patch.neighborCount >= 0) target.neighborCount = Math.floor(patch.neighborCount)
+  if (typeof patch.focusParticipantId === 'string') target.focusParticipantId = patch.focusParticipantId
+
+  if (patch.transform && typeof patch.transform === 'object') {
+    const { x, y, scaleX, scaleY } = patch.transform
+    if (typeof x === 'number') target.transform.x = x
+    if (typeof y === 'number') target.transform.y = y
+    if (typeof scaleX === 'number') target.transform.scaleX = scaleX
+    if (typeof scaleY === 'number') target.transform.scaleY = scaleY
+  }
+
+  if (Array.isArray(patch.participants)) {
+    target.participants = patch.participants
+      .filter(participant => participant && typeof participant === 'object')
+      .map((participant, idx) => ({
+        id: typeof participant.id === 'string' && participant.id.trim()
+          ? participant.id.trim()
+          : `participant-${idx + 1}`,
+        username: typeof participant.username === 'string' && participant.username.trim()
+          ? participant.username.trim()
+          : `Player ${idx + 1}`,
+        score: typeof participant.score === 'number' && Number.isFinite(participant.score) ? participant.score : 0,
+      }))
+  }
+
+  if (patch.appearance && typeof patch.appearance === 'object') {
+    const merged = {
+      ...(target.appearance ?? FACTORY_MODULE_DEFAULTS.leaderboard.appearance),
+      ...patch.appearance,
+      usernameColors: patch.appearance.usernameColors && typeof patch.appearance.usernameColors === 'object' && !Array.isArray(patch.appearance.usernameColors)
+        ? { ...((target.appearance?.usernameColors ?? {})), ...patch.appearance.usernameColors }
+        : (target.appearance?.usernameColors ?? {}),
+      numberColorKeys: Array.isArray(patch.appearance.numberColorKeys)
+        ? patch.appearance.numberColorKeys
+        : (target.appearance?.numberColorKeys ?? []),
+    }
+    target.appearance = sanitizeLeaderboardAppearance(merged, FACTORY_MODULE_DEFAULTS.leaderboard.appearance)
+  }
+}
+
 function normalizeNowPlayingPopup(savedPopup) {
   const animation = savedPopup?.animation ?? {}
+  const normalizeVolumeDbFromLegacyPct = Number.isFinite(savedPopup?.normalizedVolumePct)
+    ? Math.max(MIN_NORMALIZED_VOLUME_DB, Math.min(MAX_NORMALIZED_VOLUME_DB, 20 * Math.log10(Math.max(0.0001, savedPopup.normalizedVolumePct / 100))))
+    : null
+  const normalizeVolumeDb = typeof savedPopup?.normalizedVolumeDb === 'number' && Number.isFinite(savedPopup.normalizedVolumeDb)
+    ? Math.max(MIN_NORMALIZED_VOLUME_DB, Math.min(MAX_NORMALIZED_VOLUME_DB, savedPopup.normalizedVolumeDb))
+    : (normalizeVolumeDbFromLegacyPct ?? DEFAULT_NOW_PLAYING_POPUP.normalizedVolumeDb)
   return {
     x: typeof savedPopup?.x === 'number' ? savedPopup.x : DEFAULT_NOW_PLAYING_POPUP.x,
     y: typeof savedPopup?.y === 'number' ? savedPopup.y : DEFAULT_NOW_PLAYING_POPUP.y,
@@ -138,6 +305,10 @@ function normalizeNowPlayingPopup(savedPopup) {
     defaultPlayMusic: typeof savedPopup?.defaultPlayMusic === 'boolean'
       ? savedPopup.defaultPlayMusic
       : DEFAULT_NOW_PLAYING_POPUP.defaultPlayMusic,
+    normalizeVolume: typeof savedPopup?.normalizeVolume === 'boolean'
+      ? savedPopup.normalizeVolume
+      : DEFAULT_NOW_PLAYING_POPUP.normalizeVolume,
+    normalizedVolumeDb: normalizeVolumeDb,
     animation: {
       songStartShowSec: typeof animation.songStartShowSec === 'number' && animation.songStartShowSec >= 0
         ? animation.songStartShowSec
@@ -173,6 +344,18 @@ function patchNowPlayingPopup(target, patch) {
   if (typeof patch.y === 'number') target.y = patch.y
   if (typeof patch.hiddenVisual === 'boolean') target.hiddenVisual = patch.hiddenVisual
   if (typeof patch.defaultPlayMusic === 'boolean') target.defaultPlayMusic = patch.defaultPlayMusic
+  if (typeof patch.normalizeVolume === 'boolean') target.normalizeVolume = patch.normalizeVolume
+  if (typeof patch.normalizedVolumeDb === 'number' && Number.isFinite(patch.normalizedVolumeDb)) {
+    target.normalizedVolumeDb = Math.max(MIN_NORMALIZED_VOLUME_DB, Math.min(MAX_NORMALIZED_VOLUME_DB, patch.normalizedVolumeDb))
+  } else if (typeof patch.normalizedVolumePct === 'number' && Number.isFinite(patch.normalizedVolumePct)) {
+    target.normalizedVolumeDb = Math.max(
+      MIN_NORMALIZED_VOLUME_DB,
+      Math.min(
+        MAX_NORMALIZED_VOLUME_DB,
+        20 * Math.log10(Math.max(0.0001, patch.normalizedVolumePct / 100)),
+      ),
+    )
+  }
   if (patch.animation && typeof patch.animation === 'object') {
     if (typeof patch.animation.songStartShowSec === 'number' && patch.animation.songStartShowSec >= 0) {
       target.animation.songStartShowSec = patch.animation.songStartShowSec
@@ -205,6 +388,7 @@ function mergeModuleDefaults(saved) {
   const p = saved?.progressBar ?? {}
   const i = saved?.image ?? {}
   const t = saved?.text ?? {}
+  const l = saved?.leaderboard ?? {}
 
   return {
     progressBar: {
@@ -225,6 +409,30 @@ function mergeModuleDefaults(saved) {
       text:      typeof t.text === 'string' ? t.text : FACTORY_MODULE_DEFAULTS.text.text,
       color:     typeof t.color === 'string' ? t.color : FACTORY_MODULE_DEFAULTS.text.color,
       transform: { ...DEFAULT_TEXT_TRANSFORM, ...(t.transform ?? {}) },
+    },
+    leaderboard: {
+      name: typeof l.name === 'string' && l.name.trim() ? l.name.trim() : FACTORY_MODULE_DEFAULTS.leaderboard.name,
+      scoreType: l.scoreType === 'time' ? 'time' : 'number',
+      topCount: typeof l.topCount === 'number' && l.topCount >= 1 ? Math.floor(l.topCount) : FACTORY_MODULE_DEFAULTS.leaderboard.topCount,
+      neighborCount: typeof l.neighborCount === 'number' && l.neighborCount >= 0
+        ? Math.floor(l.neighborCount)
+        : FACTORY_MODULE_DEFAULTS.leaderboard.neighborCount,
+      transform: { ...DEFAULT_LEADERBOARD_TRANSFORM, ...(l.transform ?? {}) },
+      appearance: sanitizeLeaderboardAppearance(l.appearance, FACTORY_MODULE_DEFAULTS.leaderboard.appearance),
+      focusParticipantId: typeof l.focusParticipantId === 'string' ? l.focusParticipantId : FACTORY_MODULE_DEFAULTS.leaderboard.focusParticipantId,
+      participants: Array.isArray(l.participants) && l.participants.length > 0
+        ? l.participants
+          .filter(participant => participant && typeof participant === 'object')
+          .map((participant, idx) => ({
+            id: typeof participant.id === 'string' && participant.id.trim()
+              ? participant.id.trim()
+              : `participant-${idx + 1}`,
+            username: typeof participant.username === 'string' && participant.username.trim()
+              ? participant.username.trim()
+              : `Player ${idx + 1}`,
+            score: typeof participant.score === 'number' && Number.isFinite(participant.score) ? participant.score : 0,
+          }))
+        : FACTORY_MODULE_DEFAULTS.leaderboard.participants.map(participant => ({ ...participant })),
     },
   }
 }
@@ -1048,6 +1256,42 @@ const clients = new Set()
 app.use(express.json({ limit: '50mb' }))
 app.use('/Music', express.static(MUSIC_DIR))
 
+app.get('/api/local-image', localImageLimiter, (req, res) => {
+  const moduleId = typeof req.query.moduleId === 'string' ? req.query.moduleId.trim() : ''
+  const participantId = typeof req.query.participantId === 'string' ? req.query.participantId.trim() : ''
+  const kind = typeof req.query.kind === 'string' ? req.query.kind.trim() : ''
+  if (!moduleId || !['background', 'icon', 'backdrop'].includes(kind)) {
+    return res.status(400).json({ error: 'invalid image request' })
+  }
+  if ((kind === 'icon' || kind === 'backdrop') && !participantId) {
+    return res.status(400).json({ error: 'participantId is required for participant images' })
+  }
+  if (kind === 'background' && participantId) {
+    return res.status(400).json({ error: 'participantId is only valid for participant images' })
+  }
+  const configuredPath = getLeaderboardAbsoluteImagePath(moduleId, participantId, kind)
+  const requestedPath = normalizeAbsoluteImagePath(configuredPath)
+  if (!requestedPath || !isAbsoluteFilePath(requestedPath)) {
+    return res.status(404).json({ error: 'image not found or not absolute' })
+  }
+  const normalizedPath = resolve(requestedPath)
+  const extension = extname(normalizedPath).toLowerCase()
+  if (!IMAGE_EXTENSIONS.has(extension)) {
+    return res.status(400).json({ error: 'path must target an image file' })
+  }
+  if (!LOCAL_IMAGE_ALLOWED_ROOTS.some(root => isPathWithinRoot(normalizedPath, root))) {
+    return res.status(403).json({ error: 'path is outside allowed directories' })
+  }
+  if (!existsSync(normalizedPath)) {
+    return res.status(404).json({ error: 'file not found' })
+  }
+  return res.sendFile(normalizedPath, err => {
+    if (err && !res.headersSent) {
+      res.status(404).json({ error: 'file not found' })
+    }
+  })
+})
+
 function getOverlay(id) {
   return state.overlays.find(o => o.id === id) ?? null
 }
@@ -1082,6 +1326,9 @@ function patchDefaults(body) {
   }
   if (body.text && typeof body.text === 'object') {
     patchText(state.moduleDefaults.text, body.text)
+  }
+  if (body.leaderboard && typeof body.leaderboard === 'object') {
+    patchLeaderboard(state.moduleDefaults.leaderboard, body.leaderboard)
   }
 }
 

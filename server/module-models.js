@@ -3,8 +3,26 @@ export const DEFAULT_TITLE = { x: 0, y: 0, fontSize: 16 }
 export const DEFAULT_VALUE = { x: 0, y: 0, fontSize: 14 }
 export const DEFAULT_IMAGE_TRANSFORM = { x: 0, y: 0, scaleX: 1, scaleY: 1 }
 export const DEFAULT_TEXT_TRANSFORM = { x: 0, y: 0, scaleX: 1, scaleY: 1, fontSize: 32 }
+export const DEFAULT_LEADERBOARD_TRANSFORM = { x: 0, y: 0, scaleX: 1, scaleY: 1 }
+export const DEFAULT_LEADERBOARD_ART = {
+  src: '',
+  x: 0,
+  y: 0,
+  scaleX: 1,
+  scaleY: 1,
+  opacity: 1,
+  blurPx: 0,
+  cropTop: 0,
+  cropRight: 0,
+  cropBottom: 0,
+  cropLeft: 0,
+}
+export const DEFAULT_LEADERBOARD_TEXT_OUTLINE = {
+  sizePx: 0,
+  color: '#000000',
+}
 
-export const MODULE_TYPES = new Set(['progressBar', 'image', 'text', 'dj'])
+export const MODULE_TYPES = new Set(['progressBar', 'image', 'text', 'dj', 'leaderboard'])
 
 export const FACTORY_MODULE_DEFAULTS = {
   progressBar: {
@@ -35,6 +53,176 @@ export const FACTORY_MODULE_DEFAULTS = {
     targetStyles: [],
     targetAttributes: {},
   },
+  leaderboard: {
+    name: 'Leaderboard',
+    scoreType: 'number',
+    topCount: 3,
+    neighborCount: 2,
+    transform: { ...DEFAULT_LEADERBOARD_TRANSFORM },
+    appearance: {
+      showRankNumbers: true,
+      textColor: '#ffffff',
+      defaultUsernameColor: '#ffffff',
+      usernameColors: {},
+      numberColorMode: 'solid',
+      numberColor: '#82b1ff',
+      numberColorKeys: [],
+      focusHighlightColor: '#82b1ff',
+      focusHighlightAlpha: 255,
+      backgroundColor: '#000000',
+      backgroundAlpha: 199,
+      borderColor: '#ffffff',
+      borderAlpha: 36,
+      backgroundImage: { ...DEFAULT_LEADERBOARD_ART },
+      titleOutline: { ...DEFAULT_LEADERBOARD_TEXT_OUTLINE },
+      participantOutline: { ...DEFAULT_LEADERBOARD_TEXT_OUTLINE },
+      scoreOutline: { ...DEFAULT_LEADERBOARD_TEXT_OUTLINE },
+      participantIconSizePx: 24,
+      autoHide: {
+        enabled: false,
+        hideDelaySec: 30,
+        periodicShowSec: 5,
+        periodicIntervalSec: 60,
+        animation: {
+          transitionDurationSec: 0.35,
+          motionDirection: 'down',
+          motionDistancePx: 14,
+          motionInterpolation: 'linear',
+        },
+      },
+    },
+    focusParticipantId: 'streamer',
+    participants: [
+      { id: 'streamer', username: 'Streamer', score: 50 },
+      { id: 'challenger-1', username: 'Rival One', score: 65 },
+      { id: 'challenger-2', username: 'Rival Two', score: 42 },
+      { id: 'challenger-3', username: 'Rival Three', score: 31 },
+    ],
+  },
+}
+
+function sanitizeHexColor(raw, fallback) {
+  if (typeof raw !== 'string') return fallback
+  const normalized = raw.trim().toLowerCase()
+  return /^#[0-9a-f]{6}$/i.test(normalized) ? normalized : fallback
+}
+
+function sanitizeAlpha(raw, fallback) {
+  const n = Number(raw)
+  if (!Number.isFinite(n) || n < 0 || n > 255) return fallback
+  return Math.round(n)
+}
+
+function sanitizeOpacity(raw, fallback) {
+  const n = Number(raw)
+  if (!Number.isFinite(n) || n < 0 || n > 1) return fallback
+  return n
+}
+
+function sanitizeNonNegative(raw, fallback) {
+  const n = Number(raw)
+  return Number.isFinite(n) && n >= 0 ? n : fallback
+}
+
+function sanitizeLeaderboardArt(raw, fallback = DEFAULT_LEADERBOARD_ART) {
+  const source = raw && typeof raw === 'object' ? raw : {}
+  return {
+    src: typeof source.src === 'string' ? source.src.trim() : fallback.src,
+    x: typeof source.x === 'number' && Number.isFinite(source.x) ? source.x : fallback.x,
+    y: typeof source.y === 'number' && Number.isFinite(source.y) ? source.y : fallback.y,
+    scaleX: typeof source.scaleX === 'number' && Number.isFinite(source.scaleX) ? source.scaleX : fallback.scaleX,
+    scaleY: typeof source.scaleY === 'number' && Number.isFinite(source.scaleY) ? source.scaleY : fallback.scaleY,
+    opacity: sanitizeOpacity(source.opacity, fallback.opacity),
+    blurPx: sanitizeNonNegative(source.blurPx, fallback.blurPx ?? 0),
+    cropTop: sanitizeNonNegative(source.cropTop, fallback.cropTop),
+    cropRight: sanitizeNonNegative(source.cropRight, fallback.cropRight),
+    cropBottom: sanitizeNonNegative(source.cropBottom, fallback.cropBottom),
+    cropLeft: sanitizeNonNegative(source.cropLeft, fallback.cropLeft),
+  }
+}
+
+function sanitizeLeaderboardTextOutline(raw, fallback = DEFAULT_LEADERBOARD_TEXT_OUTLINE) {
+  const source = raw && typeof raw === 'object' ? raw : {}
+  return {
+    sizePx: sanitizeNonNegative(source.sizePx, fallback.sizePx ?? 0),
+    color: sanitizeHexColor(source.color, fallback.color ?? '#000000'),
+  }
+}
+
+function sanitizeLeaderboardAppearance(raw, fallback = FACTORY_MODULE_DEFAULTS.leaderboard.appearance) {
+  const source = raw && typeof raw === 'object' ? raw : {}
+  const usernameColors = {}
+  if (source.usernameColors && typeof source.usernameColors === 'object' && !Array.isArray(source.usernameColors)) {
+    for (const [participantId, color] of Object.entries(source.usernameColors)) {
+      if (typeof participantId !== 'string' || !participantId.trim()) continue
+      const normalizedColor = sanitizeHexColor(color, '')
+      if (normalizedColor) usernameColors[participantId] = normalizedColor
+    }
+  }
+
+  const uniqueGradientKeys = new Map()
+  if (Array.isArray(source.numberColorKeys)) {
+    for (const item of source.numberColorKeys) {
+      if (!item || typeof item !== 'object') continue
+      const position = Number(item.position)
+      if (!Number.isFinite(position)) continue
+      const color = sanitizeHexColor(item.color, '')
+      if (!color) continue
+      uniqueGradientKeys.set(position, { position, color })
+    }
+  }
+
+  const fallbackAutoHide = fallback.autoHide ?? FACTORY_MODULE_DEFAULTS.leaderboard.appearance.autoHide
+  const srcAutoHide = source.autoHide && typeof source.autoHide === 'object' ? source.autoHide : {}
+  const fallbackAnimation = fallbackAutoHide.animation ?? FACTORY_MODULE_DEFAULTS.leaderboard.appearance.autoHide.animation
+  const srcAnimation = srcAutoHide.animation && typeof srcAutoHide.animation === 'object' ? srcAutoHide.animation : {}
+  const autoHide = {
+    enabled: typeof srcAutoHide.enabled === 'boolean' ? srcAutoHide.enabled : !!fallbackAutoHide.enabled,
+    hideDelaySec: typeof srcAutoHide.hideDelaySec === 'number' && srcAutoHide.hideDelaySec >= 0
+      ? srcAutoHide.hideDelaySec : fallbackAutoHide.hideDelaySec,
+    periodicShowSec: typeof srcAutoHide.periodicShowSec === 'number' && srcAutoHide.periodicShowSec >= 0
+      ? srcAutoHide.periodicShowSec : fallbackAutoHide.periodicShowSec,
+    periodicIntervalSec: typeof srcAutoHide.periodicIntervalSec === 'number' && srcAutoHide.periodicIntervalSec >= 0
+      ? srcAutoHide.periodicIntervalSec : fallbackAutoHide.periodicIntervalSec,
+    animation: {
+      transitionDurationSec: typeof srcAnimation.transitionDurationSec === 'number' && srcAnimation.transitionDurationSec >= 0
+        ? srcAnimation.transitionDurationSec
+        : fallbackAnimation.transitionDurationSec,
+      motionDirection: ['none', 'up', 'down', 'left', 'right'].includes(srcAnimation.motionDirection)
+        ? srcAnimation.motionDirection
+        : fallbackAnimation.motionDirection,
+      motionDistancePx: typeof srcAnimation.motionDistancePx === 'number' && srcAnimation.motionDistancePx >= 0
+        ? srcAnimation.motionDistancePx
+        : fallbackAnimation.motionDistancePx,
+      motionInterpolation: ['linear', 'quadratic', 'exponential'].includes(srcAnimation.motionInterpolation)
+        ? srcAnimation.motionInterpolation
+        : fallbackAnimation.motionInterpolation,
+    },
+  }
+
+  return {
+    showRankNumbers: typeof source.showRankNumbers === 'boolean'
+      ? source.showRankNumbers
+      : !!fallback.showRankNumbers,
+    textColor: sanitizeHexColor(source.textColor, fallback.textColor),
+    defaultUsernameColor: sanitizeHexColor(source.defaultUsernameColor, fallback.defaultUsernameColor),
+    usernameColors,
+    numberColorMode: source.numberColorMode === 'gradient' ? 'gradient' : 'solid',
+    numberColor: sanitizeHexColor(source.numberColor, fallback.numberColor),
+    numberColorKeys: [...uniqueGradientKeys.values()].sort((a, b) => a.position - b.position),
+    focusHighlightColor: sanitizeHexColor(source.focusHighlightColor, fallback.focusHighlightColor),
+    focusHighlightAlpha: sanitizeAlpha(source.focusHighlightAlpha, fallback.focusHighlightAlpha ?? 255),
+    backgroundColor: sanitizeHexColor(source.backgroundColor, fallback.backgroundColor ?? '#000000'),
+    backgroundAlpha: sanitizeAlpha(source.backgroundAlpha, fallback.backgroundAlpha ?? 199),
+    borderColor: sanitizeHexColor(source.borderColor, fallback.borderColor ?? '#ffffff'),
+    borderAlpha: sanitizeAlpha(source.borderAlpha, fallback.borderAlpha ?? 36),
+    backgroundImage: sanitizeLeaderboardArt(source.backgroundImage, fallback.backgroundImage ?? DEFAULT_LEADERBOARD_ART),
+    titleOutline: sanitizeLeaderboardTextOutline(source.titleOutline, fallback.titleOutline ?? DEFAULT_LEADERBOARD_TEXT_OUTLINE),
+    participantOutline: sanitizeLeaderboardTextOutline(source.participantOutline, fallback.participantOutline ?? DEFAULT_LEADERBOARD_TEXT_OUTLINE),
+    scoreOutline: sanitizeLeaderboardTextOutline(source.scoreOutline, fallback.scoreOutline ?? DEFAULT_LEADERBOARD_TEXT_OUTLINE),
+    participantIconSizePx: sanitizeNonNegative(source.participantIconSizePx, fallback.participantIconSizePx ?? 24),
+    autoHide,
+  }
 }
 
 class AbstractModule {
@@ -244,10 +432,136 @@ class DJModule extends AbstractModule {
   }
 }
 
+function sanitizeParticipant(raw, newId, idx = 0) {
+  const fallback = `Player ${idx + 1}`
+  const generatedId = typeof newId === 'function' ? newId() : ''
+  return {
+    id: typeof raw?.id === 'string' && raw.id.trim() ? raw.id.trim() : (generatedId || `participant-${idx + 1}`),
+    username: typeof raw?.username === 'string' && raw.username.trim() ? raw.username.trim() : fallback,
+    score: typeof raw?.score === 'number' && Number.isFinite(raw.score) ? raw.score : 0,
+    iconSrc: typeof raw?.iconSrc === 'string' ? raw.iconSrc.trim() : '',
+    iconBlurPx: sanitizeNonNegative(raw?.iconBlurPx, 0),
+    backdropImage: sanitizeLeaderboardArt(raw?.backdropImage, DEFAULT_LEADERBOARD_ART),
+  }
+}
+
+class LeaderboardModule extends AbstractModule {
+  constructor(saved, newId) {
+    super(saved, newId, 'leaderboard')
+    const d = FACTORY_MODULE_DEFAULTS.leaderboard
+    this.name = typeof saved?.name === 'string' && saved.name.trim() ? saved.name : d.name
+    this.scoreType = saved?.scoreType === 'time' ? 'time' : 'number'
+    this.topCount = typeof saved?.topCount === 'number' && saved.topCount >= 1 ? Math.floor(saved.topCount) : d.topCount
+    this.neighborCount = typeof saved?.neighborCount === 'number' && saved.neighborCount >= 0
+      ? Math.floor(saved.neighborCount)
+      : d.neighborCount
+    this.transform = { ...DEFAULT_LEADERBOARD_TRANSFORM, ...(saved?.transform ?? {}) }
+    this.appearance = sanitizeLeaderboardAppearance(saved?.appearance, d.appearance)
+    this.focusParticipantId = typeof saved?.focusParticipantId === 'string' ? saved.focusParticipantId : d.focusParticipantId
+    this.participants = []
+    this.patch(saved ?? {}, newId)
+  }
+
+  patch(patch, newId = () => this.id) {
+    this.patchShared(patch)
+    if (typeof patch?.name === 'string' && patch.name.trim()) this.name = patch.name.trim()
+    if (patch?.scoreType === 'time' || patch?.scoreType === 'number') this.scoreType = patch.scoreType
+    if (typeof patch?.topCount === 'number' && patch.topCount >= 1) this.topCount = Math.floor(patch.topCount)
+    if (typeof patch?.neighborCount === 'number' && patch.neighborCount >= 0) this.neighborCount = Math.floor(patch.neighborCount)
+    if (typeof patch?.focusParticipantId === 'string') this.focusParticipantId = patch.focusParticipantId
+
+    if (patch?.transform && typeof patch.transform === 'object') {
+      const { x, y, scaleX, scaleY } = patch.transform
+      if (typeof x === 'number') this.transform.x = x
+      if (typeof y === 'number') this.transform.y = y
+      if (typeof scaleX === 'number') this.transform.scaleX = scaleX
+      if (typeof scaleY === 'number') this.transform.scaleY = scaleY
+    }
+
+    if (patch?.appearance && typeof patch.appearance === 'object') {
+      const incoming = patch.appearance
+      const merged = {
+        ...this.appearance,
+        ...incoming,
+        usernameColors: incoming.usernameColors && typeof incoming.usernameColors === 'object' && !Array.isArray(incoming.usernameColors)
+          ? { ...this.appearance.usernameColors, ...incoming.usernameColors }
+          : this.appearance.usernameColors,
+        numberColorKeys: Array.isArray(incoming.numberColorKeys) ? incoming.numberColorKeys : this.appearance.numberColorKeys,
+        backgroundImage: incoming.backgroundImage && typeof incoming.backgroundImage === 'object'
+          ? { ...this.appearance.backgroundImage, ...incoming.backgroundImage }
+          : this.appearance.backgroundImage,
+        titleOutline: incoming.titleOutline && typeof incoming.titleOutline === 'object'
+          ? { ...this.appearance.titleOutline, ...incoming.titleOutline }
+          : this.appearance.titleOutline,
+        participantOutline: incoming.participantOutline && typeof incoming.participantOutline === 'object'
+          ? { ...this.appearance.participantOutline, ...incoming.participantOutline }
+          : this.appearance.participantOutline,
+        scoreOutline: incoming.scoreOutline && typeof incoming.scoreOutline === 'object'
+          ? { ...this.appearance.scoreOutline, ...incoming.scoreOutline }
+          : this.appearance.scoreOutline,
+        autoHide: incoming.autoHide && typeof incoming.autoHide === 'object'
+          ? {
+            ...this.appearance.autoHide,
+            ...incoming.autoHide,
+            animation: incoming.autoHide.animation && typeof incoming.autoHide.animation === 'object'
+              ? { ...this.appearance.autoHide.animation, ...incoming.autoHide.animation }
+              : this.appearance.autoHide.animation,
+          }
+          : this.appearance.autoHide,
+      }
+      this.appearance = sanitizeLeaderboardAppearance(merged, FACTORY_MODULE_DEFAULTS.leaderboard.appearance)
+    }
+
+    if (Array.isArray(patch?.participants)) {
+      this.participants = patch.participants.map((participant, idx) => sanitizeParticipant(participant, newId, idx))
+    } else if (this.participants.length === 0) {
+      this.participants = FACTORY_MODULE_DEFAULTS.leaderboard.participants.map((participant, idx) =>
+        sanitizeParticipant(participant, newId, idx)
+      )
+    }
+
+    if (!this.participants.some(participant => participant.id === this.focusParticipantId)) {
+      this.focusParticipantId = this.participants[0]?.id ?? ''
+    }
+  }
+
+  toObject() {
+    return {
+      id: this.id,
+      type: this.type,
+      hidden: this.hidden,
+      name: this.name,
+      scoreType: this.scoreType,
+      topCount: this.topCount,
+      neighborCount: this.neighborCount,
+      transform: { ...this.transform },
+      appearance: {
+        ...this.appearance,
+        usernameColors: { ...this.appearance.usernameColors },
+        numberColorKeys: this.appearance.numberColorKeys.map(item => ({ ...item })),
+        backgroundImage: { ...this.appearance.backgroundImage },
+        titleOutline: { ...this.appearance.titleOutline },
+        participantOutline: { ...this.appearance.participantOutline },
+        scoreOutline: { ...this.appearance.scoreOutline },
+        autoHide: {
+          ...this.appearance.autoHide,
+          animation: { ...this.appearance.autoHide.animation },
+        },
+      },
+      focusParticipantId: this.focusParticipantId,
+      participants: this.participants.map(participant => ({
+        ...participant,
+        backdropImage: { ...participant.backdropImage },
+      })),
+    }
+  }
+}
+
 function moduleClassFor(type) {
   if (type === 'image') return ImageModule
   if (type === 'text') return TextModule
   if (type === 'dj') return DJModule
+  if (type === 'leaderboard') return LeaderboardModule
   return ProgressBarModule
 }
 
@@ -295,6 +609,24 @@ export function newModule(type, moduleDefaults, newId) {
       moodWindow: d.moodWindow,
       targetStyles: [],
       targetAttributes: {},
+    }, newId).toObject()
+  }
+
+  if (actualType === 'leaderboard') {
+    const d = moduleDefaults.leaderboard ?? FACTORY_MODULE_DEFAULTS.leaderboard
+    return new LeaderboardModule({
+      hidden: false,
+      name: d.name,
+      scoreType: d.scoreType === 'time' ? 'time' : 'number',
+      topCount: d.topCount,
+      neighborCount: d.neighborCount,
+      transform: { ...DEFAULT_LEADERBOARD_TRANSFORM, ...(d.transform ?? {}) },
+      appearance: {
+        ...FACTORY_MODULE_DEFAULTS.leaderboard.appearance,
+        ...(d.appearance ?? {}),
+      },
+      focusParticipantId: d.focusParticipantId,
+      participants: Array.isArray(d.participants) ? d.participants.map(participant => ({ ...participant })) : [],
     }, newId).toObject()
   }
 

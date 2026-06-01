@@ -68,6 +68,28 @@
         <button class="action-btn" :disabled="!canPause" @click="pauseMusic">Pause</button>
         <button class="action-btn" :disabled="!canResume" @click="resumeMusic">Resume</button>
         <button class="action-btn action-activate" @click="skipMusic">Skip Song</button>
+        <label class="music-inline-option">
+          <input
+            type="checkbox"
+            :checked="popupSettings.normalizeVolume"
+            @change="patchPopupSettings({ normalizeVolume: $event.target.checked })"
+          />
+          Normalize Volume
+        </label>
+        <label class="music-inline-option">
+          Target
+          <input
+            type="number"
+            min="-36"
+            max="0"
+            step="0.5"
+            class="music-inline-number"
+            :disabled="!popupSettings.normalizeVolume"
+            :value="popupSettings.normalizedVolumeDb"
+            @change="patchPopupSettings({ normalizedVolumeDb: $event.target.valueAsNumber })"
+          />
+          dB
+        </label>
       </div>
 
       <p class="music-help">
@@ -237,6 +259,24 @@
           </div>
         </div>
 
+        <div v-else-if="mod.type === 'leaderboard'" class="leaderboard-section">
+          <p class="leaderboard-rank">
+            #{{ leaderboardFocusSnapshot(mod).rank }} / {{ leaderboardFocusSnapshot(mod).total }}
+          </p>
+          <p class="leaderboard-name">{{ leaderboardFocusSnapshot(mod).participant?.username ?? 'No User' }}</p>
+          <p class="leaderboard-score">{{ leaderboardFocusSnapshot(mod).formattedScore }}</p>
+          <div class="counter-row">
+            <button class="counter-btn" @click="adjustLeaderboardScore(mod, -1)">−</button>
+            <input type="number" class="step-input" :value="steps[mod.id] ?? leaderboardDefaultStep(mod)" @change="setStepLocal(mod.id, $event.target.value)" title="Step size" />
+            <button class="counter-btn" @click="adjustLeaderboardScore(mod, +1)">+</button>
+          </div>
+          <div class="counter-row">
+            <input type="number" class="set-input" :placeholder="mod.scoreType === 'time' ? 'Set ms…' : 'Set value…'" :value="setVals[mod.id] ?? ''" @input="updateSetVal(mod.id, $event.target.value)" @keyup.enter="setLeaderboardScore(mod)" />
+            <button class="counter-btn-sm" @click="setLeaderboardScore(mod)">Set</button>
+            <button class="counter-btn-sm reset" @click="setLeaderboardScore(mod, 0)">Reset</button>
+          </div>
+        </div>
+
         <!-- Edit panel (all types) -->
         <div v-if="editOpen[mod.id]" class="edit-panel">
 
@@ -365,6 +405,457 @@
             </div>
           </template>
 
+          <template v-else-if="mod.type === 'leaderboard'">
+            <div class="edit-row">
+              <label class="edit-label">Title</label>
+              <input type="text" class="wide-input" :value="mod.name" @change="patchMod(mod.id, { name: $event.target.value })" />
+            </div>
+            <div class="edit-row">
+              <label class="edit-label">Score Type</label>
+              <select :value="mod.scoreType" @change="patchMod(mod.id, { scoreType: $event.target.value })">
+                <option value="number">Number</option>
+                <option value="time">Time (ms)</option>
+              </select>
+            </div>
+            <div class="edit-row">
+              <label class="edit-label">Top Rows</label>
+              <input type="number" min="1" :value="mod.topCount" @change="patchMod(mod.id, { topCount: $event.target.valueAsNumber })" />
+            </div>
+            <div class="edit-row">
+              <label class="edit-label">Neighbor Rows</label>
+              <input type="number" min="0" :value="mod.neighborCount" @change="patchMod(mod.id, { neighborCount: $event.target.valueAsNumber })" />
+            </div>
+            <div class="edit-row">
+              <label class="edit-label">Focus User</label>
+              <select :value="mod.focusParticipantId" @change="patchMod(mod.id, { focusParticipantId: $event.target.value })">
+                <option v-for="participant in sortedLeaderboardParticipants(mod)" :key="mod.id + '-focus-' + participant.id" :value="participant.id">
+                  {{ participant.username }}
+                </option>
+              </select>
+            </div>
+            <div class="edit-row checkbox-row">
+              <label class="edit-label">Hide Rank Numbers</label>
+              <input
+                type="checkbox"
+                :checked="!leaderboardAppearance(mod).showRankNumbers"
+                @change="patchLeaderboardAppearance(mod, { showRankNumbers: !$event.target.checked })"
+              />
+            </div>
+            <p class="edit-sub">Colors</p>
+            <div class="edit-row">
+              <label class="edit-label">Text</label>
+              <input
+                type="color"
+                :value="leaderboardAppearance(mod).textColor"
+                @input="patchLeaderboardAppearance(mod, { textColor: $event.target.value })"
+              />
+            </div>
+            <div class="edit-row">
+              <label class="edit-label">User Default</label>
+              <input
+                type="color"
+                :value="leaderboardAppearance(mod).defaultUsernameColor"
+                @input="patchLeaderboardAppearance(mod, { defaultUsernameColor: $event.target.value })"
+              />
+            </div>
+            <div class="edit-row">
+              <label class="edit-label">Focus Highlight</label>
+              <input
+                type="color"
+                :value="leaderboardAppearance(mod).focusHighlightColor"
+                @input="patchLeaderboardAppearance(mod, { focusHighlightColor: $event.target.value })"
+              />
+              <input
+                type="number"
+                min="0"
+                max="255"
+                step="1"
+                class="alpha-input"
+                :value="leaderboardAppearance(mod).focusHighlightAlpha"
+                @change="patchLeaderboardAppearance(mod, { focusHighlightAlpha: $event.target.valueAsNumber })"
+                title="Alpha (0–255)"
+              />
+            </div>
+            <div class="edit-row">
+              <label class="edit-label">Background</label>
+              <input
+                type="color"
+                :value="leaderboardAppearance(mod).backgroundColor"
+                @input="patchLeaderboardAppearance(mod, { backgroundColor: $event.target.value })"
+              />
+              <input
+                type="number"
+                min="0"
+                max="255"
+                step="1"
+                class="alpha-input"
+                :value="leaderboardAppearance(mod).backgroundAlpha"
+                @change="patchLeaderboardAppearance(mod, { backgroundAlpha: $event.target.valueAsNumber })"
+                title="Alpha (0–255)"
+              />
+            </div>
+            <div class="edit-row">
+              <label class="edit-label">Border</label>
+              <input
+                type="color"
+                :value="leaderboardAppearance(mod).borderColor"
+                @input="patchLeaderboardAppearance(mod, { borderColor: $event.target.value })"
+              />
+              <input
+                type="number"
+                min="0"
+                max="255"
+                step="1"
+                class="alpha-input"
+                :value="leaderboardAppearance(mod).borderAlpha"
+                @change="patchLeaderboardAppearance(mod, { borderAlpha: $event.target.valueAsNumber })"
+                title="Alpha (0–255)"
+              />
+            </div>
+            <div class="edit-row">
+              <label class="edit-label">Number Color</label>
+              <select
+                :value="leaderboardAppearance(mod).numberColorMode"
+                @change="patchLeaderboardAppearance(mod, { numberColorMode: $event.target.value })"
+              >
+                <option value="solid">Solid</option>
+                <option value="gradient">Gradient</option>
+              </select>
+            </div>
+            <div v-if="leaderboardAppearance(mod).numberColorMode === 'solid'" class="edit-row">
+              <label class="edit-label">Number Solid</label>
+              <input
+                type="color"
+                :value="leaderboardAppearance(mod).numberColor"
+                @input="patchLeaderboardAppearance(mod, { numberColor: $event.target.value })"
+              />
+            </div>
+            <template v-else>
+              <div
+                v-for="(keyValue, keyIdx) in leaderboardAppearance(mod).numberColorKeys"
+                :key="`${mod.id}-num-key-${keyIdx}`"
+                class="leaderboard-keyvalue-row"
+              >
+                <label class="edit-label">Key {{ keyIdx + 1 }}</label>
+                <input
+                  type="number"
+                  step="1"
+                  class="participant-score-input"
+                  :value="keyValue.position"
+                  @change="setLeaderboardNumberColorKey(mod, keyIdx, { position: $event.target.valueAsNumber })"
+                />
+                <input
+                  type="color"
+                  :value="keyValue.color"
+                  @input="setLeaderboardNumberColorKey(mod, keyIdx, { color: $event.target.value })"
+                />
+                <button class="action-btn action-delete" @click="removeLeaderboardNumberColorKey(mod, keyIdx)">✕</button>
+              </div>
+              <button class="counter-btn-sm" @click="addLeaderboardNumberColorKey(mod)">+ Add Score Key</button>
+            </template>
+            <p class="edit-sub">Text Outline</p>
+            <div
+              v-for="field in leaderboardOutlineFields"
+              :key="`${mod.id}-${field.key}`"
+              class="edit-row"
+            >
+              <label class="edit-label">{{ field.label }}</label>
+              <input
+                type="color"
+                :value="leaderboardAppearance(mod)[field.key].color"
+                @input="patchLeaderboardTextOutline(mod, field.key, { color: $event.target.value })"
+              />
+              <input
+                type="number"
+                min="0"
+                step="0.5"
+                :value="leaderboardAppearance(mod)[field.key].sizePx"
+                @change="patchLeaderboardTextOutline(mod, field.key, { sizePx: $event.target.valueAsNumber })"
+              />
+              <span class="edit-unit">px</span>
+            </div>
+            <p class="edit-sub">Artwork</p>
+            <div class="edit-row">
+              <label class="edit-label">Background</label>
+              <input
+                type="text"
+                class="wide-input"
+                placeholder="/path/to/image.png"
+                :value="leaderboardAppearance(mod).backgroundImage.src"
+                @change="patchLeaderboardBackgroundImage(mod, { src: $event.target.value })"
+              />
+            </div>
+            <div class="edit-row">
+              <label class="edit-label">Background Opacity</label>
+              <input
+                type="number"
+                min="0"
+                max="1"
+                step="0.05"
+                :value="leaderboardAppearance(mod).backgroundImage.opacity"
+                @change="patchLeaderboardBackgroundImage(mod, { opacity: $event.target.valueAsNumber })"
+              />
+            </div>
+            <div class="edit-row">
+              <label class="edit-label">Background Blur</label>
+              <input
+                type="number"
+                min="0"
+                step="0.5"
+                :value="leaderboardAppearance(mod).backgroundImage.blurPx"
+                @change="patchLeaderboardBackgroundImage(mod, { blurPx: $event.target.valueAsNumber })"
+              />
+              <span class="edit-unit">px</span>
+            </div>
+            <div class="edit-row">
+              <label class="edit-label">Icon Size</label>
+              <input
+                type="number"
+                min="0"
+                step="1"
+                :value="leaderboardAppearance(mod).participantIconSizePx"
+                @change="patchLeaderboardAppearance(mod, { participantIconSizePx: $event.target.valueAsNumber })"
+              />
+              <span class="edit-unit">px</span>
+            </div>
+            <div
+              v-for="field in leaderboardArtFields"
+              :key="`${mod.id}-bg-art-${field.key}`"
+              class="edit-row"
+            >
+              <label class="edit-label">{{ field.label }}</label>
+              <input
+                type="number"
+                :step="field.step"
+                :value="leaderboardAppearance(mod).backgroundImage[field.key]"
+                @change="patchLeaderboardBackgroundImage(mod, { [field.key]: $event.target.valueAsNumber })"
+              />
+            </div>
+            <div
+              v-for="field in leaderboardCropFields"
+              :key="`${mod.id}-bg-crop-${field.key}`"
+              class="edit-row"
+            >
+              <label class="edit-label">{{ field.label }}</label>
+              <input
+                type="number"
+                min="0"
+                step="1"
+                :value="leaderboardAppearance(mod).backgroundImage[field.key]"
+                @change="patchLeaderboardBackgroundImage(mod, { [field.key]: $event.target.valueAsNumber })"
+              />
+              <span class="edit-unit">px</span>
+            </div>
+            <p class="edit-sub">Auto-Hide</p>
+            <div class="edit-row checkbox-row">
+              <label class="edit-label">Enable</label>
+              <input
+                type="checkbox"
+                :checked="leaderboardAppearance(mod).autoHide.enabled"
+                @change="patchLeaderboardAppearance(mod, { autoHide: { ...leaderboardAppearance(mod).autoHide, enabled: $event.target.checked } })"
+              />
+            </div>
+            <template v-if="leaderboardAppearance(mod).autoHide.enabled">
+              <div class="edit-row">
+                <label class="edit-label">Hide After</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  :value="leaderboardAppearance(mod).autoHide.hideDelaySec"
+                  @change="patchLeaderboardAppearance(mod, { autoHide: { ...leaderboardAppearance(mod).autoHide, hideDelaySec: $event.target.valueAsNumber } })"
+                />
+                <span class="edit-unit">s</span>
+              </div>
+              <div class="edit-row">
+                <label class="edit-label">Show Every</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  :value="leaderboardAppearance(mod).autoHide.periodicIntervalSec"
+                  @change="patchLeaderboardAppearance(mod, { autoHide: { ...leaderboardAppearance(mod).autoHide, periodicIntervalSec: $event.target.valueAsNumber } })"
+                />
+                <span class="edit-unit">s</span>
+              </div>
+              <div class="edit-row">
+                <label class="edit-label">Show For</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  :value="leaderboardAppearance(mod).autoHide.periodicShowSec"
+                  @change="patchLeaderboardAppearance(mod, { autoHide: { ...leaderboardAppearance(mod).autoHide, periodicShowSec: $event.target.valueAsNumber } })"
+                />
+                <span class="edit-unit">s</span>
+              </div>
+              <div class="edit-row">
+                <label class="edit-label">Fade + Motion Duration (sec)</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.05"
+                  :value="leaderboardAppearance(mod).autoHide.animation.transitionDurationSec"
+                  @change="patchLeaderboardAppearance(mod, { autoHide: { ...leaderboardAppearance(mod).autoHide, animation: { ...leaderboardAppearance(mod).autoHide.animation, transitionDurationSec: $event.target.valueAsNumber } } })"
+                />
+              </div>
+              <div class="edit-row">
+                <label class="edit-label">Motion Direction</label>
+                <select
+                  :value="leaderboardAppearance(mod).autoHide.animation.motionDirection"
+                  @change="patchLeaderboardAppearance(mod, { autoHide: { ...leaderboardAppearance(mod).autoHide, animation: { ...leaderboardAppearance(mod).autoHide.animation, motionDirection: $event.target.value } } })"
+                >
+                  <option value="none">None (fade only)</option>
+                  <option value="up">Vertical Up</option>
+                  <option value="down">Vertical Down</option>
+                  <option value="left">Horizontal Left</option>
+                  <option value="right">Horizontal Right</option>
+                </select>
+              </div>
+              <div class="edit-row">
+                <label class="edit-label">Motion Distance (px)</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  :value="leaderboardAppearance(mod).autoHide.animation.motionDistancePx"
+                  @change="patchLeaderboardAppearance(mod, { autoHide: { ...leaderboardAppearance(mod).autoHide, animation: { ...leaderboardAppearance(mod).autoHide.animation, motionDistancePx: $event.target.valueAsNumber } } })"
+                />
+              </div>
+              <div class="edit-row">
+                <label class="edit-label">Motion Interpolation</label>
+                <select
+                  :value="leaderboardAppearance(mod).autoHide.animation.motionInterpolation"
+                  @change="patchLeaderboardAppearance(mod, { autoHide: { ...leaderboardAppearance(mod).autoHide, animation: { ...leaderboardAppearance(mod).autoHide.animation, motionInterpolation: $event.target.value } } })"
+                >
+                  <option value="linear">Linear</option>
+                  <option value="quadratic">Quadratic</option>
+                  <option value="exponential">Exponential</option>
+                </select>
+              </div>
+            </template>
+            <p class="edit-sub">Transform</p>
+            <div v-for="f in transformFields" :key="mod.id+'l'+f.key" class="edit-row">
+              <label class="edit-label">{{ f.label }}</label>
+              <input type="number" :step="f.step" :value="mod.transform?.[f.key] ?? (f.key.startsWith('scale') ? 1 : 0)" @change="patchMod(mod.id, { transform: { [f.key]: $event.target.valueAsNumber } })" />
+            </div>
+            <p class="edit-sub">Participants</p>
+            <div
+              v-for="(participant, index) in (mod.participants ?? [])"
+              :key="mod.id + '-participant-' + participant.id"
+              class="participant-block"
+            >
+              <div class="participant-main-row">
+                <span class="participant-rank">#{{ index + 1 }}</span>
+                <input type="text" class="wide-input" :value="participant.username" @change="updateLeaderboardParticipant(mod, participant.id, { username: $event.target.value })" />
+                <input type="number" step="0.001" class="participant-score-input" :value="participant.score" @change="updateLeaderboardParticipant(mod, participant.id, { score: $event.target.valueAsNumber })" />
+                <button class="action-btn participant-expand-btn" :class="{ 'action-edit-active': isParticipantEditOpen(mod.id, participant.id) }" @click="toggleParticipantEdit(mod.id, participant.id)" title="More options">⋯</button>
+              </div>
+              <div v-if="isParticipantEditOpen(mod.id, participant.id)" class="participant-extra-row">
+                <div class="participant-extra-actions">
+                  <button class="counter-btn-sm" :class="{ 'participant-focus-btn': participant.id === mod.focusParticipantId }" @click="patchMod(mod.id, { focusParticipantId: participant.id })">Focus</button>
+                  <input
+                    type="color"
+                    :value="leaderboardUsernameColor(mod, participant.id)"
+                    @input="setLeaderboardUsernameColor(mod, participant.id, $event.target.value)"
+                    title="Username color"
+                  />
+                  <button
+                    v-if="hasLeaderboardUsernameColor(mod, participant.id)"
+                    class="action-btn"
+                    @click="clearLeaderboardUsernameColor(mod, participant.id)"
+                  >Default</button>
+                  <span v-else class="participant-default-pill">Default</span>
+                  <button v-if="(mod.participants?.length ?? 0) > 1" class="action-btn action-delete" @click="removeLeaderboardParticipant(mod, participant.id)">✕</button>
+                </div>
+                <div class="edit-row participant-extra-edit-row">
+                  <label class="edit-label">Icon</label>
+                  <input
+                    type="text"
+                    class="wide-input"
+                    placeholder="/path/to/icon.png"
+                    :value="participant.iconSrc ?? ''"
+                    @change="updateLeaderboardParticipant(mod, participant.id, { iconSrc: $event.target.value })"
+                  />
+                </div>
+                <div class="edit-row participant-extra-edit-row">
+                  <label class="edit-label">Icon Blur</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.5"
+                    :value="participant.iconBlurPx ?? 0"
+                    @change="updateLeaderboardParticipant(mod, participant.id, { iconBlurPx: $event.target.valueAsNumber })"
+                  />
+                  <span class="edit-unit">px</span>
+                </div>
+                <div class="edit-row participant-extra-edit-row">
+                  <label class="edit-label">Backdrop</label>
+                  <input
+                    type="text"
+                    class="wide-input"
+                    placeholder="/path/to/backdrop.png"
+                    :value="participant.backdropImage?.src ?? ''"
+                    @change="updateLeaderboardParticipant(mod, participant.id, { backdropImage: { src: $event.target.value } })"
+                  />
+                </div>
+                <div class="edit-row participant-extra-edit-row">
+                  <label class="edit-label">Backdrop Blur</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.5"
+                    :value="participant.backdropImage?.blurPx ?? 0"
+                    @change="updateLeaderboardParticipant(mod, participant.id, { backdropImage: { blurPx: $event.target.valueAsNumber } })"
+                  />
+                  <span class="edit-unit">px</span>
+                </div>
+                <div class="edit-row participant-extra-edit-row">
+                  <label class="edit-label">Backdrop Opacity</label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="1"
+                    step="0.05"
+                    :value="participant.backdropImage?.opacity ?? 1"
+                    @change="updateLeaderboardParticipant(mod, participant.id, { backdropImage: { opacity: $event.target.valueAsNumber } })"
+                  />
+                </div>
+                <div class="participant-art-grid">
+                  <div
+                    v-for="field in leaderboardArtFields"
+                    :key="`${mod.id}-${participant.id}-art-${field.key}`"
+                    class="edit-row participant-extra-edit-row"
+                  >
+                    <label class="edit-label">{{ field.label }}</label>
+                    <input
+                      type="number"
+                      :step="field.step"
+                      :value="participant.backdropImage?.[field.key] ?? (field.key.startsWith('scale') ? 1 : 0)"
+                      @change="updateLeaderboardParticipant(mod, participant.id, { backdropImage: { [field.key]: $event.target.valueAsNumber } })"
+                    />
+                  </div>
+                  <div
+                    v-for="field in leaderboardCropFields"
+                    :key="`${mod.id}-${participant.id}-crop-${field.key}`"
+                    class="edit-row participant-extra-edit-row"
+                  >
+                    <label class="edit-label">{{ field.label }}</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      :value="participant.backdropImage?.[field.key] ?? 0"
+                      @change="updateLeaderboardParticipant(mod, participant.id, { backdropImage: { [field.key]: $event.target.valueAsNumber } })"
+                    />
+                    <span class="edit-unit">px</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <button class="counter-btn-sm" @click="addLeaderboardParticipant(mod)">+ Add Participant</button>
+          </template>
+
         </div>
       </div>
     </div>
@@ -375,6 +866,7 @@
         <option value="image">Image</option>
         <option value="text">Text</option>
         <option value="dj">DJ</option>
+        <option value="leaderboard">Leaderboard</option>
       </select>
       <button class="add-module-btn" @click="addModule">+ Add Module</button>
     </div>
@@ -397,6 +889,7 @@ const modules = ref([])
 const steps   = reactive({})
 const setVals = reactive({})
 const editOpen = reactive({})
+const participantEditOpen = reactive({})
 const music = ref(null)
 const musicEditOpen = ref(false)
 const canPause = computed(() => !!music.value && music.value.status !== 'paused')
@@ -406,6 +899,8 @@ const popupSettings = reactive({
   y: 0,
   hiddenVisual: false,
   defaultPlayMusic: true,
+  normalizeVolume: false,
+  normalizedVolumeDb: -16,
   animation: {
     songStartShowSec: 6,
     songEndShowSec: 3,
@@ -442,6 +937,23 @@ const transformFields = [
   { key: 'scaleX', label: 'Scale X',  step: 0.1 },
   { key: 'scaleY', label: 'Scale Y',  step: 0.1 },
 ]
+const leaderboardArtFields = [
+  { key: 'x', label: 'X Offset', step: 1 },
+  { key: 'y', label: 'Y Offset', step: 1 },
+  { key: 'scaleX', label: 'Scale X', step: 0.1 },
+  { key: 'scaleY', label: 'Scale Y', step: 0.1 },
+]
+const leaderboardOutlineFields = [
+  { key: 'titleOutline', label: 'Title' },
+  { key: 'participantOutline', label: 'Participants' },
+  { key: 'scoreOutline', label: 'Scores' },
+]
+const leaderboardCropFields = [
+  { key: 'cropTop', label: 'Crop Top', step: 1 },
+  { key: 'cropRight', label: 'Crop Right', step: 1 },
+  { key: 'cropBottom', label: 'Crop Bottom', step: 1 },
+  { key: 'cropLeft', label: 'Crop Left', step: 1 },
+]
 const textTransformFields = [
   { key: 'x',        label: 'X Offset', step: 1 },
   { key: 'y',        label: 'Y Offset', step: 1 },
@@ -458,11 +970,21 @@ function moduleTitle(mod) {
   if (mod.type === 'image') return mod.name?.trim() || 'Image Module'
   if (mod.type === 'text') return mod.name?.trim() || 'Text Module'
   if (mod.type === 'dj') return mod.name?.trim() || 'DJ Module'
+  if (mod.type === 'leaderboard') return mod.name?.trim() || 'Leaderboard Module'
   return mod.label || 'ProgressBar Module'
 }
 
 function toggleEdit(modId) {
   editOpen[modId] = !editOpen[modId]
+}
+
+function toggleParticipantEdit(modId, participantId) {
+  const key = `${modId}-${participantId}`
+  participantEditOpen[key] = !participantEditOpen[key]
+}
+
+function isParticipantEditOpen(modId, participantId) {
+  return !!participantEditOpen[`${modId}-${participantId}`]
 }
 
 async function toggleHidden(mod) {
@@ -474,11 +996,16 @@ function applyModules(newModules) {
   for (const key of Object.keys(editOpen)) {
     if (!newIds.has(key)) delete editOpen[key]
   }
+  // Clean up participantEditOpen keys for removed modules
+  for (const key of Object.keys(participantEditOpen)) {
+    const modId = key.split('-').slice(0, -1).join('-')
+    if (!newIds.has(modId)) delete participantEditOpen[key]
+  }
   modules.value = newModules
   for (const key of Object.keys(steps)) delete steps[key]
   for (const key of Object.keys(setVals)) delete setVals[key]
   for (const mod of newModules) {
-    steps[mod.id] = 1
+    steps[mod.id] = mod.type === 'leaderboard' && mod.scoreType === 'time' ? 1000 : 1
     setVals[mod.id] = ''
     if (editOpen[mod.id] === undefined) editOpen[mod.id] = false
   }
@@ -489,6 +1016,13 @@ function applyPopupSettings(nextSettings) {
   popupSettings.y = nextSettings?.y ?? 0
   popupSettings.hiddenVisual = !!nextSettings?.hiddenVisual
   popupSettings.defaultPlayMusic = typeof nextSettings?.defaultPlayMusic === 'boolean' ? nextSettings.defaultPlayMusic : true
+  popupSettings.normalizeVolume = typeof nextSettings?.normalizeVolume === 'boolean' ? nextSettings.normalizeVolume : false
+  const normalizedVolumeDbFromLegacyPct = Number.isFinite(nextSettings?.normalizedVolumePct)
+    ? Math.max(-36, Math.min(0, 20 * Math.log10(Math.max(0.0001, nextSettings.normalizedVolumePct / 100))))
+    : null
+  popupSettings.normalizedVolumeDb = Number.isFinite(nextSettings?.normalizedVolumeDb)
+    ? Math.max(-36, Math.min(0, nextSettings.normalizedVolumeDb))
+    : (normalizedVolumeDbFromLegacyPct ?? -16)
   popupSettings.animation.songStartShowSec = nextSettings?.animation?.songStartShowSec ?? 6
   popupSettings.animation.songEndShowSec = nextSettings?.animation?.songEndShowSec ?? 3
   popupSettings.animation.periodicIntervalSec = nextSettings?.animation?.periodicIntervalSec ?? 45
@@ -721,11 +1255,312 @@ function updateSetVal(modId, val) {
   setVals[modId] = val
 }
 
+function sortedLeaderboardParticipants(mod) {
+  const participants = Array.isArray(mod?.participants) ? mod.participants : []
+  return [...participants].sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
+}
+
+function leaderboardArt(source) {
+  const item = source && typeof source === 'object' ? source : {}
+  return {
+    src: typeof item.src === 'string' ? item.src : '',
+    x: typeof item.x === 'number' && Number.isFinite(item.x) ? item.x : 0,
+    y: typeof item.y === 'number' && Number.isFinite(item.y) ? item.y : 0,
+    scaleX: typeof item.scaleX === 'number' && Number.isFinite(item.scaleX) ? item.scaleX : 1,
+    scaleY: typeof item.scaleY === 'number' && Number.isFinite(item.scaleY) ? item.scaleY : 1,
+    opacity: typeof item.opacity === 'number' && Number.isFinite(item.opacity) && item.opacity >= 0 && item.opacity <= 1 ? item.opacity : 1,
+    blurPx: typeof item.blurPx === 'number' && Number.isFinite(item.blurPx) && item.blurPx >= 0 ? item.blurPx : 0,
+    cropTop: typeof item.cropTop === 'number' && Number.isFinite(item.cropTop) && item.cropTop >= 0 ? item.cropTop : 0,
+    cropRight: typeof item.cropRight === 'number' && Number.isFinite(item.cropRight) && item.cropRight >= 0 ? item.cropRight : 0,
+    cropBottom: typeof item.cropBottom === 'number' && Number.isFinite(item.cropBottom) && item.cropBottom >= 0 ? item.cropBottom : 0,
+    cropLeft: typeof item.cropLeft === 'number' && Number.isFinite(item.cropLeft) && item.cropLeft >= 0 ? item.cropLeft : 0,
+  }
+}
+
+function leaderboardTextOutline(source) {
+  const item = source && typeof source === 'object' ? source : {}
+  return {
+    sizePx: typeof item.sizePx === 'number' && Number.isFinite(item.sizePx) && item.sizePx >= 0 ? item.sizePx : 0,
+    color: typeof item.color === 'string' && /^#[0-9a-f]{6}$/i.test(item.color) ? item.color : '#000000',
+  }
+}
+
+function leaderboardAppearance(mod) {
+  const source = mod?.appearance ?? {}
+  const usernameColors = source.usernameColors && typeof source.usernameColors === 'object' && !Array.isArray(source.usernameColors)
+    ? source.usernameColors
+    : {}
+  const numberColorKeys = Array.isArray(source.numberColorKeys)
+    ? source.numberColorKeys
+      .map(item => ({ position: Number(item?.position), color: item?.color }))
+      .filter(item => Number.isFinite(item.position) && typeof item.color === 'string' && /^#[0-9a-f]{6}$/i.test(item.color))
+      .sort((a, b) => a.position - b.position)
+    : []
+
+  const srcAutoHide = source.autoHide && typeof source.autoHide === 'object' ? source.autoHide : {}
+  const srcAnimation = srcAutoHide.animation && typeof srcAutoHide.animation === 'object' ? srcAutoHide.animation : {}
+  const autoHide = {
+    enabled: srcAutoHide.enabled === true,
+    hideDelaySec: typeof srcAutoHide.hideDelaySec === 'number' && srcAutoHide.hideDelaySec >= 0 ? srcAutoHide.hideDelaySec : 30,
+    periodicShowSec: typeof srcAutoHide.periodicShowSec === 'number' && srcAutoHide.periodicShowSec >= 0 ? srcAutoHide.periodicShowSec : 5,
+    periodicIntervalSec: typeof srcAutoHide.periodicIntervalSec === 'number' && srcAutoHide.periodicIntervalSec >= 0 ? srcAutoHide.periodicIntervalSec : 60,
+    animation: {
+      transitionDurationSec: typeof srcAnimation.transitionDurationSec === 'number' && srcAnimation.transitionDurationSec >= 0
+        ? srcAnimation.transitionDurationSec
+        : 0.35,
+      motionDirection: ['none', 'up', 'down', 'left', 'right'].includes(srcAnimation.motionDirection)
+        ? srcAnimation.motionDirection
+        : 'down',
+      motionDistancePx: typeof srcAnimation.motionDistancePx === 'number' && srcAnimation.motionDistancePx >= 0
+        ? srcAnimation.motionDistancePx
+        : 14,
+      motionInterpolation: ['linear', 'quadratic', 'exponential'].includes(srcAnimation.motionInterpolation)
+        ? srcAnimation.motionInterpolation
+        : 'linear',
+    },
+  }
+
+  return {
+    showRankNumbers: source.showRankNumbers !== false,
+    textColor: typeof source.textColor === 'string' && /^#[0-9a-f]{6}$/i.test(source.textColor) ? source.textColor : '#ffffff',
+    defaultUsernameColor: typeof source.defaultUsernameColor === 'string' && /^#[0-9a-f]{6}$/i.test(source.defaultUsernameColor) ? source.defaultUsernameColor : '#ffffff',
+    usernameColors,
+    numberColorMode: source.numberColorMode === 'gradient' ? 'gradient' : 'solid',
+    numberColor: typeof source.numberColor === 'string' && /^#[0-9a-f]{6}$/i.test(source.numberColor) ? source.numberColor : '#82b1ff',
+    numberColorKeys,
+    focusHighlightColor: typeof source.focusHighlightColor === 'string' && /^#[0-9a-f]{6}$/i.test(source.focusHighlightColor) ? source.focusHighlightColor : '#82b1ff',
+    focusHighlightAlpha: Number.isFinite(Number(source.focusHighlightAlpha)) && Number(source.focusHighlightAlpha) >= 0 && Number(source.focusHighlightAlpha) <= 255 ? Math.round(Number(source.focusHighlightAlpha)) : 255,
+    backgroundColor: typeof source.backgroundColor === 'string' && /^#[0-9a-f]{6}$/i.test(source.backgroundColor) ? source.backgroundColor : '#000000',
+    backgroundAlpha: Number.isFinite(Number(source.backgroundAlpha)) && Number(source.backgroundAlpha) >= 0 && Number(source.backgroundAlpha) <= 255 ? Math.round(Number(source.backgroundAlpha)) : 199,
+    borderColor: typeof source.borderColor === 'string' && /^#[0-9a-f]{6}$/i.test(source.borderColor) ? source.borderColor : '#ffffff',
+    borderAlpha: Number.isFinite(Number(source.borderAlpha)) && Number(source.borderAlpha) >= 0 && Number(source.borderAlpha) <= 255 ? Math.round(Number(source.borderAlpha)) : 36,
+    backgroundImage: leaderboardArt(source.backgroundImage),
+    titleOutline: leaderboardTextOutline(source.titleOutline),
+    participantOutline: leaderboardTextOutline(source.participantOutline),
+    scoreOutline: leaderboardTextOutline(source.scoreOutline),
+    participantIconSizePx: typeof source.participantIconSizePx === 'number' && Number.isFinite(source.participantIconSizePx) && source.participantIconSizePx >= 0 ? source.participantIconSizePx : 24,
+    autoHide,
+  }
+}
+
+function patchLeaderboardAppearance(mod, patch) {
+  const current = leaderboardAppearance(mod)
+  const next = {
+    ...current,
+    ...patch,
+    usernameColors: patch.usernameColors && typeof patch.usernameColors === 'object' && !Array.isArray(patch.usernameColors)
+      ? patch.usernameColors
+      : current.usernameColors,
+    numberColorKeys: Array.isArray(patch.numberColorKeys) ? patch.numberColorKeys : current.numberColorKeys,
+    backgroundImage: patch.backgroundImage && typeof patch.backgroundImage === 'object'
+      ? { ...current.backgroundImage, ...patch.backgroundImage }
+      : current.backgroundImage,
+    titleOutline: patch.titleOutline && typeof patch.titleOutline === 'object'
+      ? { ...current.titleOutline, ...patch.titleOutline }
+      : current.titleOutline,
+    participantOutline: patch.participantOutline && typeof patch.participantOutline === 'object'
+      ? { ...current.participantOutline, ...patch.participantOutline }
+      : current.participantOutline,
+    scoreOutline: patch.scoreOutline && typeof patch.scoreOutline === 'object'
+      ? { ...current.scoreOutline, ...patch.scoreOutline }
+      : current.scoreOutline,
+    autoHide: patch.autoHide && typeof patch.autoHide === 'object'
+      ? {
+        ...current.autoHide,
+        ...patch.autoHide,
+        animation: patch.autoHide.animation && typeof patch.autoHide.animation === 'object'
+          ? { ...current.autoHide.animation, ...patch.autoHide.animation }
+          : current.autoHide.animation,
+      }
+      : current.autoHide,
+  }
+  patchMod(mod.id, { appearance: next })
+}
+
+function patchLeaderboardBackgroundImage(mod, patch) {
+  patchLeaderboardAppearance(mod, {
+    backgroundImage: {
+      ...leaderboardAppearance(mod).backgroundImage,
+      ...patch,
+    },
+  })
+}
+
+function patchLeaderboardTextOutline(mod, key, patch) {
+  patchLeaderboardAppearance(mod, {
+    [key]: {
+      ...leaderboardAppearance(mod)[key],
+      ...patch,
+    },
+  })
+}
+
+function leaderboardFocusSnapshot(mod) {
+  const sorted = sortedLeaderboardParticipants(mod)
+  const focusId = mod?.focusParticipantId
+  const rankIndex = Math.max(0, sorted.findIndex(participant => participant.id === focusId))
+  const participant = sorted[rankIndex] ?? null
+  return {
+    participant,
+    rank: sorted.length === 0 ? 0 : rankIndex + 1,
+    total: sorted.length,
+    formattedScore: formatLeaderboardScore(participant?.score ?? 0, mod?.scoreType),
+  }
+}
+
+function formatLeaderboardScore(rawScore, scoreType) {
+  const score = typeof rawScore === 'number' && Number.isFinite(rawScore) ? rawScore : 0
+  if (scoreType !== 'time') return Number.isInteger(score) ? String(score) : score.toFixed(3).replace(/\.?0+$/, '')
+  const negative = score < 0
+  let rest = Math.abs(score)
+  const ms = Math.floor(rest % 1000)
+  rest = Math.floor(rest / 1000)
+  const seconds = rest % 60
+  rest = Math.floor(rest / 60)
+  const minutes = rest % 60
+  rest = Math.floor(rest / 60)
+  const hours = rest % 24
+  const days = Math.floor(rest / 24)
+  let units = []
+  if (days > 0) units = [`${days}d`, `${hours}h`, `${minutes}m`]
+  else if (hours > 0) units = [`${hours}h`, `${minutes}m`, `${seconds}s`]
+  else if (minutes > 0) units = [`${minutes}m`, `${seconds}s`]
+  else if (seconds > 0) units = [`${seconds}s`, `${ms}ms`]
+  else units = [`${ms}ms`]
+  units = units.filter((unit, index) => index === 0 || !unit.startsWith('0'))
+  return `${negative ? '-' : ''}${units.join(' ')}`
+}
+
+function leaderboardUsernameColor(mod, participantId) {
+  const appearance = leaderboardAppearance(mod)
+  return appearance.usernameColors[participantId] ?? appearance.defaultUsernameColor
+}
+
+function hasLeaderboardUsernameColor(mod, participantId) {
+  return Object.prototype.hasOwnProperty.call(leaderboardAppearance(mod).usernameColors, participantId)
+}
+
+function setLeaderboardUsernameColor(mod, participantId, color) {
+  const appearance = leaderboardAppearance(mod)
+  patchLeaderboardAppearance(mod, {
+    usernameColors: {
+      ...appearance.usernameColors,
+      [participantId]: color,
+    },
+  })
+}
+
+function clearLeaderboardUsernameColor(mod, participantId) {
+  const appearance = leaderboardAppearance(mod)
+  const next = { ...appearance.usernameColors }
+  delete next[participantId]
+  patchLeaderboardAppearance(mod, { usernameColors: next })
+}
+
+function addLeaderboardNumberColorKey(mod) {
+  const appearance = leaderboardAppearance(mod)
+  const nextPosition = (appearance.numberColorKeys[appearance.numberColorKeys.length - 1]?.position ?? 0) + 1
+  patchLeaderboardAppearance(mod, {
+    numberColorKeys: [...appearance.numberColorKeys, { position: nextPosition, color: '#82b1ff' }],
+  })
+}
+
+function setLeaderboardNumberColorKey(mod, keyIdx, patch) {
+  const appearance = leaderboardAppearance(mod)
+  const next = appearance.numberColorKeys.map((item, idx) => (idx === keyIdx ? { ...item, ...patch } : item))
+  patchLeaderboardAppearance(mod, { numberColorKeys: next })
+}
+
+function removeLeaderboardNumberColorKey(mod, keyIdx) {
+  const appearance = leaderboardAppearance(mod)
+  patchLeaderboardAppearance(mod, {
+    numberColorKeys: appearance.numberColorKeys.filter((_, idx) => idx !== keyIdx),
+  })
+}
+
+function leaderboardDefaultStep(mod) {
+  return mod?.scoreType === 'time' ? 1000 : 1
+}
+
+function patchLeaderboardParticipants(mod, participants, extraPatch = {}) {
+  patchMod(mod.id, { ...extraPatch, participants })
+}
+
+function adjustLeaderboardScore(mod, direction) {
+  const snapshot = leaderboardFocusSnapshot(mod)
+  const participant = snapshot.participant
+  if (!participant) return
+  const step = steps[mod.id] ?? leaderboardDefaultStep(mod)
+  const participants = (mod.participants ?? []).map(item =>
+    item.id === participant.id ? { ...item, score: (item.score ?? 0) + direction * step } : item
+  )
+  patchLeaderboardParticipants(mod, participants)
+}
+
+function setLeaderboardScore(mod, forceValue = null) {
+  const snapshot = leaderboardFocusSnapshot(mod)
+  const participant = snapshot.participant
+  if (!participant) return
+  const value = forceValue === null ? Number(setVals[mod.id]) : forceValue
+  if (!Number.isFinite(value)) return
+  setVals[mod.id] = ''
+  const participants = (mod.participants ?? []).map(item =>
+    item.id === participant.id ? { ...item, score: value } : item
+  )
+  patchLeaderboardParticipants(mod, participants)
+}
+
+function updateLeaderboardParticipant(mod, participantId, patch) {
+  const participants = (mod.participants ?? []).map((participant, idx) => {
+    if (participant.id !== participantId) return participant
+    const currentBackdrop = leaderboardArt(participant.backdropImage)
+    const username = typeof patch.username === 'string'
+      ? (patch.username.trim() || `Player ${idx + 1}`)
+      : participant.username
+    const score = typeof patch.score === 'number' && Number.isFinite(patch.score) ? patch.score : participant.score
+    const iconSrc = typeof patch.iconSrc === 'string' ? patch.iconSrc : (participant.iconSrc ?? '')
+    const iconBlurPx = typeof patch.iconBlurPx === 'number' && Number.isFinite(patch.iconBlurPx) && patch.iconBlurPx >= 0
+      ? patch.iconBlurPx
+      : (typeof participant.iconBlurPx === 'number' && Number.isFinite(participant.iconBlurPx) && participant.iconBlurPx >= 0
+        ? participant.iconBlurPx
+        : 0)
+    const backdropImage = patch.backdropImage && typeof patch.backdropImage === 'object'
+      ? { ...currentBackdrop, ...patch.backdropImage }
+      : currentBackdrop
+    return { ...participant, username, score, iconSrc, iconBlurPx, backdropImage }
+  })
+  patchLeaderboardParticipants(mod, participants)
+}
+
+function addLeaderboardParticipant(mod) {
+  const participants = Array.isArray(mod.participants) ? [...mod.participants] : []
+  participants.push({
+    id: `participant-${Math.random().toString(36).slice(2, 10)}`,
+    username: `Player ${participants.length + 1}`,
+    score: 0,
+  })
+  const focusParticipantId = mod.focusParticipantId || participants[0]?.id || ''
+  patchLeaderboardParticipants(mod, participants, { focusParticipantId })
+}
+
+function removeLeaderboardParticipant(mod, participantId) {
+  const participants = (mod.participants ?? []).filter(participant => participant.id !== participantId)
+  if (participants.length === 0) return
+  const focusParticipantId = participants.some(participant => participant.id === mod.focusParticipantId)
+    ? mod.focusParticipantId
+    : participants[0].id
+  patchLeaderboardParticipants(mod, participants, { focusParticipantId })
+}
+
 async function patchPopupSettings(patch) {
   if (typeof patch.x === 'number' && Number.isFinite(patch.x)) popupSettings.x = patch.x
   if (typeof patch.y === 'number' && Number.isFinite(patch.y)) popupSettings.y = patch.y
   if (typeof patch.hiddenVisual === 'boolean') popupSettings.hiddenVisual = patch.hiddenVisual
   if (typeof patch.defaultPlayMusic === 'boolean') popupSettings.defaultPlayMusic = patch.defaultPlayMusic
+  if (typeof patch.normalizeVolume === 'boolean') popupSettings.normalizeVolume = patch.normalizeVolume
+  if (typeof patch.normalizedVolumeDb === 'number' && Number.isFinite(patch.normalizedVolumeDb)) {
+    popupSettings.normalizedVolumeDb = Math.max(-36, Math.min(0, patch.normalizedVolumeDb))
+  }
   if (patch.animation && typeof patch.animation === 'object') {
     if (typeof patch.animation.songStartShowSec === 'number' && Number.isFinite(patch.animation.songStartShowSec)) {
       popupSettings.animation.songStartShowSec = patch.animation.songStartShowSec
@@ -927,8 +1762,32 @@ h1 {
 
 .music-controls {
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   gap: 0.45rem;
   margin-bottom: 0.55rem;
+}
+
+.music-inline-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.75rem;
+  color: #bdbdbd;
+}
+
+.music-inline-number {
+  width: 4rem;
+  background-color: #1e1e1e;
+  color: #e0e0e0;
+  border: 1px solid #424242;
+  border-radius: 6px;
+  padding: 0.22rem 0.35rem;
+  font-size: 0.8rem;
+}
+
+.music-inline-number:disabled {
+  opacity: 0.45;
 }
 
 .music-controls .action-btn:disabled {
@@ -1040,6 +1899,36 @@ h1 {
   gap: 0.45rem;
 }
 
+.leaderboard-section {
+  padding: 0.7rem 0 0.3rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.leaderboard-rank {
+  margin: 0;
+  font-size: 0.75rem;
+  color: #9e9e9e;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.leaderboard-name {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #e0e0e0;
+}
+
+.leaderboard-score {
+  margin: 0 0 0.15rem;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #82b1ff;
+}
+
 .count {
   font-size: 3rem;
   font-weight: bold;
@@ -1107,6 +1996,23 @@ h1 {
   text-align: left;
 }
 
+.edit-unit {
+  font-size: 0.75rem;
+  color: #757575;
+  flex-shrink: 0;
+}
+
+.alpha-input {
+  background-color: #1e1e1e;
+  color: #e0e0e0;
+  border: 1px solid #424242;
+  border-radius: 6px;
+  padding: 0.25rem 0.35rem;
+  font-size: 0.8rem;
+  width: 3.5rem;
+  text-align: center;
+}
+
 /* ── Edit panel ──────────────────────────────────────── */
 .edit-panel {
   padding: 0.6rem 0 0;
@@ -1160,6 +2066,78 @@ h1 {
   color: #616161;
   margin: 0 0 0.4rem;
   font-style: italic;
+}
+
+.participant-block {
+  margin-bottom: 0.35rem;
+}
+
+.participant-main-row {
+  display: grid;
+  grid-template-columns: auto 1fr 5.6rem auto;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.participant-extra-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.3rem 0.3rem 0.1rem 1.4rem;
+  border-left: 2px solid #2a2a2a;
+  margin-left: 0.2rem;
+}
+
+.participant-extra-actions {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.participant-extra-edit-row {
+  margin-bottom: 0;
+}
+
+.participant-art-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.4rem 0.8rem;
+}
+
+.participant-expand-btn {
+  padding: 0.18rem 0.45rem;
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.leaderboard-keyvalue-row {
+  display: grid;
+  grid-template-columns: 4.5rem 1fr auto auto;
+  gap: 0.4rem;
+  align-items: center;
+  margin-bottom: 0.4rem;
+}
+
+.participant-score-input {
+  width: 100%;
+  min-width: 0;
+}
+
+.participant-rank {
+  font-size: 0.75rem;
+  color: #757575;
+}
+
+.participant-default-pill {
+  font-size: 0.7rem;
+  color: #757575;
+}
+
+.participant-focus-btn {
+  color: #82b1ff;
+  border-color: #2a4070;
+  background: #141e33;
 }
 
 /* ── Add module row ──────────────────────────────────── */
