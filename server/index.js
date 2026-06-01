@@ -70,6 +70,20 @@ const DEFAULT_NOW_PLAYING_POPUP = {
     motionDistancePx: 14,
     motionInterpolation: 'linear',
   },
+  appearance: {
+    scale: 1,
+    backgroundColor: '#000000',
+    backgroundAlpha: 204,
+    borderColor: '#ffffff',
+    borderAlpha: 38,
+    backgroundImage: { src: '', opacity: 1, blurPx: 0 },
+    titleColor: '#ffffff',
+    titleFontSizePx: 16,
+    artistColor: '#cccccc',
+    artistFontSizePx: 14,
+    titleOutline: { sizePx: 0, color: '#000000' },
+    artistOutline: { sizePx: 0, color: '#000000' },
+  },
 }
 const MIN_NORMALIZED_VOLUME_DB = -36
 const MAX_NORMALIZED_VOLUME_DB = 0
@@ -335,6 +349,42 @@ function normalizeNowPlayingPopup(savedPopup) {
         ? animation.motionInterpolation
         : DEFAULT_NOW_PLAYING_POPUP.animation.motionInterpolation,
     },
+    appearance: normalizeNowPlayingAppearance(savedPopup?.appearance),
+  }
+}
+
+function normalizeNowPlayingAppearance(raw) {
+  const d = DEFAULT_NOW_PLAYING_POPUP.appearance
+  const source = raw && typeof raw === 'object' ? raw : {}
+  const bgImg = source.backgroundImage && typeof source.backgroundImage === 'object' ? source.backgroundImage : {}
+  const titleOutline = source.titleOutline && typeof source.titleOutline === 'object' ? source.titleOutline : {}
+  const artistOutline = source.artistOutline && typeof source.artistOutline === 'object' ? source.artistOutline : {}
+  return {
+    scale: typeof source.scale === 'number' && Number.isFinite(source.scale) && source.scale > 0 ? source.scale : d.scale,
+    backgroundColor: /^#[0-9a-f]{6}$/i.test(source.backgroundColor) ? source.backgroundColor.toLowerCase() : d.backgroundColor,
+    backgroundAlpha: Number.isFinite(Number(source.backgroundAlpha)) && Number(source.backgroundAlpha) >= 0 && Number(source.backgroundAlpha) <= 255
+      ? Math.round(Number(source.backgroundAlpha)) : d.backgroundAlpha,
+    borderColor: /^#[0-9a-f]{6}$/i.test(source.borderColor) ? source.borderColor.toLowerCase() : d.borderColor,
+    borderAlpha: Number.isFinite(Number(source.borderAlpha)) && Number(source.borderAlpha) >= 0 && Number(source.borderAlpha) <= 255
+      ? Math.round(Number(source.borderAlpha)) : d.borderAlpha,
+    backgroundImage: {
+      src: typeof bgImg.src === 'string' ? bgImg.src.trim() : d.backgroundImage.src,
+      opacity: typeof bgImg.opacity === 'number' && Number.isFinite(bgImg.opacity) && bgImg.opacity >= 0 && bgImg.opacity <= 1
+        ? bgImg.opacity : d.backgroundImage.opacity,
+      blurPx: typeof bgImg.blurPx === 'number' && bgImg.blurPx >= 0 ? bgImg.blurPx : d.backgroundImage.blurPx,
+    },
+    titleColor: /^#[0-9a-f]{6}$/i.test(source.titleColor) ? source.titleColor.toLowerCase() : d.titleColor,
+    titleFontSizePx: typeof source.titleFontSizePx === 'number' && source.titleFontSizePx > 0 ? source.titleFontSizePx : d.titleFontSizePx,
+    artistColor: /^#[0-9a-f]{6}$/i.test(source.artistColor) ? source.artistColor.toLowerCase() : d.artistColor,
+    artistFontSizePx: typeof source.artistFontSizePx === 'number' && source.artistFontSizePx > 0 ? source.artistFontSizePx : d.artistFontSizePx,
+    titleOutline: {
+      sizePx: typeof titleOutline.sizePx === 'number' && titleOutline.sizePx >= 0 ? titleOutline.sizePx : d.titleOutline.sizePx,
+      color: /^#[0-9a-f]{6}$/i.test(titleOutline.color) ? titleOutline.color.toLowerCase() : d.titleOutline.color,
+    },
+    artistOutline: {
+      sizePx: typeof artistOutline.sizePx === 'number' && artistOutline.sizePx >= 0 ? artistOutline.sizePx : d.artistOutline.sizePx,
+      color: /^#[0-9a-f]{6}$/i.test(artistOutline.color) ? artistOutline.color.toLowerCase() : d.artistOutline.color,
+    },
   }
 }
 
@@ -380,6 +430,44 @@ function patchNowPlayingPopup(target, patch) {
     }
     if (['linear', 'quadratic', 'exponential'].includes(patch.animation.motionInterpolation)) {
       target.animation.motionInterpolation = patch.animation.motionInterpolation
+    }
+  }
+  if (patch.appearance && typeof patch.appearance === 'object') {
+    if (!target.appearance) target.appearance = normalizeNowPlayingAppearance(null)
+    const app = patch.appearance
+    if (typeof app.scale === 'number' && Number.isFinite(app.scale) && app.scale > 0) target.appearance.scale = app.scale
+    if (/^#[0-9a-f]{6}$/i.test(app.backgroundColor)) target.appearance.backgroundColor = app.backgroundColor.toLowerCase()
+    if (Number.isFinite(Number(app.backgroundAlpha)) && Number(app.backgroundAlpha) >= 0 && Number(app.backgroundAlpha) <= 255) {
+      target.appearance.backgroundAlpha = Math.round(Number(app.backgroundAlpha))
+    }
+    if (/^#[0-9a-f]{6}$/i.test(app.borderColor)) target.appearance.borderColor = app.borderColor.toLowerCase()
+    if (Number.isFinite(Number(app.borderAlpha)) && Number(app.borderAlpha) >= 0 && Number(app.borderAlpha) <= 255) {
+      target.appearance.borderAlpha = Math.round(Number(app.borderAlpha))
+    }
+    if (app.backgroundImage && typeof app.backgroundImage === 'object') {
+      if (!target.appearance.backgroundImage) target.appearance.backgroundImage = { ...DEFAULT_NOW_PLAYING_POPUP.appearance.backgroundImage }
+      if (typeof app.backgroundImage.src === 'string') target.appearance.backgroundImage.src = app.backgroundImage.src.trim()
+      if (typeof app.backgroundImage.opacity === 'number' && Number.isFinite(app.backgroundImage.opacity)
+        && app.backgroundImage.opacity >= 0 && app.backgroundImage.opacity <= 1) {
+        target.appearance.backgroundImage.opacity = app.backgroundImage.opacity
+      }
+      if (typeof app.backgroundImage.blurPx === 'number' && app.backgroundImage.blurPx >= 0) {
+        target.appearance.backgroundImage.blurPx = app.backgroundImage.blurPx
+      }
+    }
+    if (/^#[0-9a-f]{6}$/i.test(app.titleColor)) target.appearance.titleColor = app.titleColor.toLowerCase()
+    if (typeof app.titleFontSizePx === 'number' && app.titleFontSizePx > 0) target.appearance.titleFontSizePx = app.titleFontSizePx
+    if (/^#[0-9a-f]{6}$/i.test(app.artistColor)) target.appearance.artistColor = app.artistColor.toLowerCase()
+    if (typeof app.artistFontSizePx === 'number' && app.artistFontSizePx > 0) target.appearance.artistFontSizePx = app.artistFontSizePx
+    if (app.titleOutline && typeof app.titleOutline === 'object') {
+      if (!target.appearance.titleOutline) target.appearance.titleOutline = { ...DEFAULT_NOW_PLAYING_POPUP.appearance.titleOutline }
+      if (typeof app.titleOutline.sizePx === 'number' && app.titleOutline.sizePx >= 0) target.appearance.titleOutline.sizePx = app.titleOutline.sizePx
+      if (/^#[0-9a-f]{6}$/i.test(app.titleOutline.color)) target.appearance.titleOutline.color = app.titleOutline.color.toLowerCase()
+    }
+    if (app.artistOutline && typeof app.artistOutline === 'object') {
+      if (!target.appearance.artistOutline) target.appearance.artistOutline = { ...DEFAULT_NOW_PLAYING_POPUP.appearance.artistOutline }
+      if (typeof app.artistOutline.sizePx === 'number' && app.artistOutline.sizePx >= 0) target.appearance.artistOutline.sizePx = app.artistOutline.sizePx
+      if (/^#[0-9a-f]{6}$/i.test(app.artistOutline.color)) target.appearance.artistOutline.color = app.artistOutline.color.toLowerCase()
     }
   }
 }
