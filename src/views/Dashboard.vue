@@ -216,6 +216,156 @@
             <option value="exponential">Exponential</option>
           </select>
         </div>
+        <p class="edit-sub">Appearance</p>
+        <div class="edit-row">
+          <label class="edit-label">Scale</label>
+          <input
+            type="number"
+            min="0.1"
+            step="0.05"
+            :value="popupSettings.appearance.scale"
+            @change="patchPopupSettings({ appearance: { scale: $event.target.valueAsNumber } })"
+          />
+        </div>
+        <div class="edit-row">
+          <label class="edit-label">Background</label>
+          <input
+            type="color"
+            :value="popupSettings.appearance.backgroundColor"
+            @input="patchPopupSettings({ appearance: { backgroundColor: $event.target.value } })"
+          />
+          <input
+            type="number"
+            min="0"
+            max="255"
+            step="1"
+            class="alpha-input"
+            :value="popupSettings.appearance.backgroundAlpha"
+            @change="patchPopupSettings({ appearance: { backgroundAlpha: $event.target.valueAsNumber } })"
+            title="Alpha (0–255)"
+          />
+        </div>
+        <div class="edit-row">
+          <label class="edit-label">Border</label>
+          <input
+            type="color"
+            :value="popupSettings.appearance.borderColor"
+            @input="patchPopupSettings({ appearance: { borderColor: $event.target.value } })"
+          />
+          <input
+            type="number"
+            min="0"
+            max="255"
+            step="1"
+            class="alpha-input"
+            :value="popupSettings.appearance.borderAlpha"
+            @change="patchPopupSettings({ appearance: { borderAlpha: $event.target.valueAsNumber } })"
+            title="Alpha (0–255)"
+          />
+        </div>
+        <div class="edit-row">
+          <label class="edit-label">Background Image</label>
+          <input
+            type="text"
+            class="wide-input"
+            placeholder="/path/to/image.png"
+            :value="popupSettings.appearance.backgroundImage.src"
+            @change="patchPopupSettings({ appearance: { backgroundImage: { src: $event.target.value } } })"
+          />
+        </div>
+        <div class="edit-row">
+          <label class="edit-label">BG Image Opacity</label>
+          <input
+            type="number"
+            min="0"
+            max="1"
+            step="0.05"
+            :value="popupSettings.appearance.backgroundImage.opacity"
+            @change="patchPopupSettings({ appearance: { backgroundImage: { opacity: $event.target.valueAsNumber } } })"
+          />
+        </div>
+        <div class="edit-row">
+          <label class="edit-label">BG Image Blur</label>
+          <input
+            type="number"
+            min="0"
+            step="0.5"
+            :value="popupSettings.appearance.backgroundImage.blurPx"
+            @change="patchPopupSettings({ appearance: { backgroundImage: { blurPx: $event.target.valueAsNumber } } })"
+          />
+          <span class="edit-unit">px</span>
+        </div>
+        <p class="edit-sub">Text</p>
+        <div class="edit-row">
+          <label class="edit-label">Title Color</label>
+          <input
+            type="color"
+            :value="popupSettings.appearance.titleColor"
+            @input="patchPopupSettings({ appearance: { titleColor: $event.target.value } })"
+          />
+        </div>
+        <div class="edit-row">
+          <label class="edit-label">Title Font Size</label>
+          <input
+            type="number"
+            min="1"
+            step="1"
+            :value="popupSettings.appearance.titleFontSizePx"
+            @change="patchPopupSettings({ appearance: { titleFontSizePx: $event.target.valueAsNumber } })"
+          />
+          <span class="edit-unit">px</span>
+        </div>
+        <div class="edit-row">
+          <label class="edit-label">Title Outline</label>
+          <input
+            type="color"
+            :value="popupSettings.appearance.titleOutline.color"
+            @input="patchPopupSettings({ appearance: { titleOutline: { color: $event.target.value, sizePx: popupSettings.appearance.titleOutline.sizePx } } })"
+          />
+          <input
+            type="number"
+            min="0"
+            step="0.5"
+            :value="popupSettings.appearance.titleOutline.sizePx"
+            @change="patchPopupSettings({ appearance: { titleOutline: { sizePx: $event.target.valueAsNumber, color: popupSettings.appearance.titleOutline.color } } })"
+          />
+          <span class="edit-unit">px</span>
+        </div>
+        <div class="edit-row">
+          <label class="edit-label">Artist Color</label>
+          <input
+            type="color"
+            :value="popupSettings.appearance.artistColor"
+            @input="patchPopupSettings({ appearance: { artistColor: $event.target.value } })"
+          />
+        </div>
+        <div class="edit-row">
+          <label class="edit-label">Artist Font Size</label>
+          <input
+            type="number"
+            min="1"
+            step="1"
+            :value="popupSettings.appearance.artistFontSizePx"
+            @change="patchPopupSettings({ appearance: { artistFontSizePx: $event.target.valueAsNumber } })"
+          />
+          <span class="edit-unit">px</span>
+        </div>
+        <div class="edit-row">
+          <label class="edit-label">Artist Outline</label>
+          <input
+            type="color"
+            :value="popupSettings.appearance.artistOutline.color"
+            @input="patchPopupSettings({ appearance: { artistOutline: { color: $event.target.value, sizePx: popupSettings.appearance.artistOutline.sizePx } } })"
+          />
+          <input
+            type="number"
+            min="0"
+            step="0.5"
+            :value="popupSettings.appearance.artistOutline.sizePx"
+            @change="patchPopupSettings({ appearance: { artistOutline: { sizePx: $event.target.valueAsNumber, color: popupSettings.appearance.artistOutline.color } } })"
+          />
+          <span class="edit-unit">px</span>
+        </div>
       </div>
     </div>
 
@@ -911,6 +1061,20 @@ const popupSettings = reactive({
     motionDistancePx: 14,
     motionInterpolation: 'linear',
   },
+  appearance: {
+    scale: 1,
+    backgroundColor: '#000000',
+    backgroundAlpha: 204,
+    borderColor: '#ffffff',
+    borderAlpha: 38,
+    backgroundImage: { src: '', opacity: 1, blurPx: 0 },
+    titleColor: '#ffffff',
+    titleFontSizePx: 16,
+    artistColor: '#cccccc',
+    artistFontSizePx: 14,
+    titleOutline: { sizePx: 0, color: '#000000' },
+    artistOutline: { sizePx: 0, color: '#000000' },
+  },
 })
 
 const newModuleType = ref('progressBar')
@@ -1031,6 +1195,28 @@ function applyPopupSettings(nextSettings) {
   popupSettings.animation.motionDirection = nextSettings?.animation?.motionDirection ?? 'down'
   popupSettings.animation.motionDistancePx = nextSettings?.animation?.motionDistancePx ?? 14
   popupSettings.animation.motionInterpolation = nextSettings?.animation?.motionInterpolation ?? 'linear'
+  const app = nextSettings?.appearance ?? {}
+  popupSettings.appearance.scale = typeof app.scale === 'number' && app.scale > 0 ? app.scale : 1
+  popupSettings.appearance.backgroundColor = /^#[0-9a-f]{6}$/i.test(app.backgroundColor) ? app.backgroundColor : '#000000'
+  popupSettings.appearance.backgroundAlpha = Number.isFinite(Number(app.backgroundAlpha)) && Number(app.backgroundAlpha) >= 0 && Number(app.backgroundAlpha) <= 255
+    ? Math.round(Number(app.backgroundAlpha)) : 204
+  popupSettings.appearance.borderColor = /^#[0-9a-f]{6}$/i.test(app.borderColor) ? app.borderColor : '#ffffff'
+  popupSettings.appearance.borderAlpha = Number.isFinite(Number(app.borderAlpha)) && Number(app.borderAlpha) >= 0 && Number(app.borderAlpha) <= 255
+    ? Math.round(Number(app.borderAlpha)) : 38
+  const bgImg = app.backgroundImage ?? {}
+  popupSettings.appearance.backgroundImage.src = typeof bgImg.src === 'string' ? bgImg.src : ''
+  popupSettings.appearance.backgroundImage.opacity = typeof bgImg.opacity === 'number' ? bgImg.opacity : 1
+  popupSettings.appearance.backgroundImage.blurPx = typeof bgImg.blurPx === 'number' ? bgImg.blurPx : 0
+  popupSettings.appearance.titleColor = /^#[0-9a-f]{6}$/i.test(app.titleColor) ? app.titleColor : '#ffffff'
+  popupSettings.appearance.titleFontSizePx = typeof app.titleFontSizePx === 'number' && app.titleFontSizePx > 0 ? app.titleFontSizePx : 16
+  popupSettings.appearance.artistColor = /^#[0-9a-f]{6}$/i.test(app.artistColor) ? app.artistColor : '#cccccc'
+  popupSettings.appearance.artistFontSizePx = typeof app.artistFontSizePx === 'number' && app.artistFontSizePx > 0 ? app.artistFontSizePx : 14
+  const titleOutline = app.titleOutline ?? {}
+  popupSettings.appearance.titleOutline.sizePx = typeof titleOutline.sizePx === 'number' && titleOutline.sizePx >= 0 ? titleOutline.sizePx : 0
+  popupSettings.appearance.titleOutline.color = /^#[0-9a-f]{6}$/i.test(titleOutline.color) ? titleOutline.color : '#000000'
+  const artistOutline = app.artistOutline ?? {}
+  popupSettings.appearance.artistOutline.sizePx = typeof artistOutline.sizePx === 'number' && artistOutline.sizePx >= 0 ? artistOutline.sizePx : 0
+  popupSettings.appearance.artistOutline.color = /^#[0-9a-f]{6}$/i.test(artistOutline.color) ? artistOutline.color : '#000000'
 }
 
 async function fetchOverlayState(id) {
@@ -1585,6 +1771,35 @@ async function patchPopupSettings(patch) {
     }
     if (typeof patch.animation.motionInterpolation === 'string') {
       popupSettings.animation.motionInterpolation = patch.animation.motionInterpolation
+    }
+  }
+  if (patch.appearance && typeof patch.appearance === 'object') {
+    const app = patch.appearance
+    if (typeof app.scale === 'number' && app.scale > 0) popupSettings.appearance.scale = app.scale
+    if (/^#[0-9a-f]{6}$/i.test(app.backgroundColor)) popupSettings.appearance.backgroundColor = app.backgroundColor
+    if (Number.isFinite(Number(app.backgroundAlpha)) && Number(app.backgroundAlpha) >= 0 && Number(app.backgroundAlpha) <= 255) {
+      popupSettings.appearance.backgroundAlpha = Math.round(Number(app.backgroundAlpha))
+    }
+    if (/^#[0-9a-f]{6}$/i.test(app.borderColor)) popupSettings.appearance.borderColor = app.borderColor
+    if (Number.isFinite(Number(app.borderAlpha)) && Number(app.borderAlpha) >= 0 && Number(app.borderAlpha) <= 255) {
+      popupSettings.appearance.borderAlpha = Math.round(Number(app.borderAlpha))
+    }
+    if (app.backgroundImage && typeof app.backgroundImage === 'object') {
+      if (typeof app.backgroundImage.src === 'string') popupSettings.appearance.backgroundImage.src = app.backgroundImage.src
+      if (typeof app.backgroundImage.opacity === 'number') popupSettings.appearance.backgroundImage.opacity = app.backgroundImage.opacity
+      if (typeof app.backgroundImage.blurPx === 'number') popupSettings.appearance.backgroundImage.blurPx = app.backgroundImage.blurPx
+    }
+    if (/^#[0-9a-f]{6}$/i.test(app.titleColor)) popupSettings.appearance.titleColor = app.titleColor
+    if (typeof app.titleFontSizePx === 'number' && app.titleFontSizePx > 0) popupSettings.appearance.titleFontSizePx = app.titleFontSizePx
+    if (/^#[0-9a-f]{6}$/i.test(app.artistColor)) popupSettings.appearance.artistColor = app.artistColor
+    if (typeof app.artistFontSizePx === 'number' && app.artistFontSizePx > 0) popupSettings.appearance.artistFontSizePx = app.artistFontSizePx
+    if (app.titleOutline && typeof app.titleOutline === 'object') {
+      if (typeof app.titleOutline.sizePx === 'number' && app.titleOutline.sizePx >= 0) popupSettings.appearance.titleOutline.sizePx = app.titleOutline.sizePx
+      if (/^#[0-9a-f]{6}$/i.test(app.titleOutline.color)) popupSettings.appearance.titleOutline.color = app.titleOutline.color
+    }
+    if (app.artistOutline && typeof app.artistOutline === 'object') {
+      if (typeof app.artistOutline.sizePx === 'number' && app.artistOutline.sizePx >= 0) popupSettings.appearance.artistOutline.sizePx = app.artistOutline.sizePx
+      if (/^#[0-9a-f]{6}$/i.test(app.artistOutline.color)) popupSettings.appearance.artistOutline.color = app.artistOutline.color
     }
   }
 

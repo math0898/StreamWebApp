@@ -95,6 +95,16 @@
 
       <transition name="now-playing-pop">
         <div v-if="shouldShowNowPlaying" class="now-playing-popup" :style="popupStyle">
+          <div
+            v-if="popupConfig.appearance.backgroundImage.src"
+            class="now-playing-bg-art"
+          >
+            <img
+              :src="popupConfig.appearance.backgroundImage.src"
+              alt=""
+              class="now-playing-bg-art-img"
+            />
+          </div>
           <img
             class="now-playing-cover"
             :src="music?.song?.coverPath"
@@ -144,6 +154,20 @@ const popupConfig = ref({
     motionDirection: 'down',
     motionDistancePx: 14,
     motionInterpolation: 'linear',
+  },
+  appearance: {
+    scale: 1,
+    backgroundColor: '#000000',
+    backgroundAlpha: 204,
+    borderColor: '#ffffff',
+    borderAlpha: 38,
+    backgroundImage: { src: '', opacity: 1, blurPx: 0 },
+    titleColor: '#ffffff',
+    titleFontSizePx: 16,
+    artistColor: '#cccccc',
+    artistFontSizePx: 14,
+    titleOutline: { sizePx: 0, color: '#000000' },
+    artistOutline: { sizePx: 0, color: '#000000' },
   },
 })
 const popupVisible = ref(false)
@@ -631,6 +655,48 @@ function computeElapsedSec(snapshot, nowMs = Date.now()) {
   return safeElapsed
 }
 
+function normalizePopupAppearance(raw) {
+  const d = {
+    scale: 1, backgroundColor: '#000000', backgroundAlpha: 204,
+    borderColor: '#ffffff', borderAlpha: 38,
+    backgroundImage: { src: '', opacity: 1, blurPx: 0 },
+    titleColor: '#ffffff', titleFontSizePx: 16,
+    artistColor: '#cccccc', artistFontSizePx: 14,
+    titleOutline: { sizePx: 0, color: '#000000' },
+    artistOutline: { sizePx: 0, color: '#000000' },
+  }
+  const source = raw && typeof raw === 'object' ? raw : {}
+  const bgImg = source.backgroundImage && typeof source.backgroundImage === 'object' ? source.backgroundImage : {}
+  const titleOutline = source.titleOutline && typeof source.titleOutline === 'object' ? source.titleOutline : {}
+  const artistOutline = source.artistOutline && typeof source.artistOutline === 'object' ? source.artistOutline : {}
+  return {
+    scale: typeof source.scale === 'number' && source.scale > 0 ? source.scale : d.scale,
+    backgroundColor: /^#[0-9a-f]{6}$/i.test(source.backgroundColor) ? source.backgroundColor : d.backgroundColor,
+    backgroundAlpha: Number.isFinite(Number(source.backgroundAlpha)) && Number(source.backgroundAlpha) >= 0 && Number(source.backgroundAlpha) <= 255
+      ? Math.round(Number(source.backgroundAlpha)) : d.backgroundAlpha,
+    borderColor: /^#[0-9a-f]{6}$/i.test(source.borderColor) ? source.borderColor : d.borderColor,
+    borderAlpha: Number.isFinite(Number(source.borderAlpha)) && Number(source.borderAlpha) >= 0 && Number(source.borderAlpha) <= 255
+      ? Math.round(Number(source.borderAlpha)) : d.borderAlpha,
+    backgroundImage: {
+      src: typeof bgImg.src === 'string' ? bgImg.src.trim() : d.backgroundImage.src,
+      opacity: typeof bgImg.opacity === 'number' && bgImg.opacity >= 0 && bgImg.opacity <= 1 ? bgImg.opacity : d.backgroundImage.opacity,
+      blurPx: typeof bgImg.blurPx === 'number' && bgImg.blurPx >= 0 ? bgImg.blurPx : d.backgroundImage.blurPx,
+    },
+    titleColor: /^#[0-9a-f]{6}$/i.test(source.titleColor) ? source.titleColor : d.titleColor,
+    titleFontSizePx: typeof source.titleFontSizePx === 'number' && source.titleFontSizePx > 0 ? source.titleFontSizePx : d.titleFontSizePx,
+    artistColor: /^#[0-9a-f]{6}$/i.test(source.artistColor) ? source.artistColor : d.artistColor,
+    artistFontSizePx: typeof source.artistFontSizePx === 'number' && source.artistFontSizePx > 0 ? source.artistFontSizePx : d.artistFontSizePx,
+    titleOutline: {
+      sizePx: typeof titleOutline.sizePx === 'number' && titleOutline.sizePx >= 0 ? titleOutline.sizePx : d.titleOutline.sizePx,
+      color: /^#[0-9a-f]{6}$/i.test(titleOutline.color) ? titleOutline.color : d.titleOutline.color,
+    },
+    artistOutline: {
+      sizePx: typeof artistOutline.sizePx === 'number' && artistOutline.sizePx >= 0 ? artistOutline.sizePx : d.artistOutline.sizePx,
+      color: /^#[0-9a-f]{6}$/i.test(artistOutline.color) ? artistOutline.color : d.artistOutline.color,
+    },
+  }
+}
+
 function normalizePopupConfig(rawConfig) {
   const animation = rawConfig?.animation ?? {}
   const normalizedVolumeDbFromLegacyPct = Number.isFinite(rawConfig?.normalizedVolumePct)
@@ -655,6 +721,7 @@ function normalizePopupConfig(rawConfig) {
       motionDistancePx: typeof animation.motionDistancePx === 'number' && animation.motionDistancePx >= 0 ? animation.motionDistancePx : 14,
       motionInterpolation: ['linear', 'quadratic', 'exponential'].includes(animation.motionInterpolation) ? animation.motionInterpolation : 'linear',
     },
+    appearance: normalizePopupAppearance(rawConfig?.appearance),
   }
   if (popupConfig.value.hiddenVisual) popupVisible.value = false
   void applyMusicGainForCurrentTrack()
@@ -905,6 +972,7 @@ const popupStyle = computed(() => {
   const direction = popupConfig.value.animation.motionDirection
   const distancePx = popupConfig.value.animation.motionDistancePx
   const vector = motionVector(direction)
+  const app = popupConfig.value.appearance
   return {
     '--popup-base-x': `${popupConfig.value.x}px`,
     '--popup-base-y': `${popupConfig.value.y}px`,
@@ -912,6 +980,19 @@ const popupStyle = computed(() => {
     '--popup-motion-y': `${vector.y * distancePx}px`,
     '--popup-transition-duration': `${popupConfig.value.animation.transitionDurationSec}s`,
     '--popup-motion-ease': interpolationCurve(popupConfig.value.animation.motionInterpolation),
+    '--popup-scale': app.scale,
+    '--popup-bg-color': `${app.backgroundColor}${Math.round(app.backgroundAlpha).toString(16).padStart(2, '0')}`,
+    '--popup-border-color': `${app.borderColor}${Math.round(app.borderAlpha).toString(16).padStart(2, '0')}`,
+    '--popup-title-color': app.titleColor,
+    '--popup-title-font-size': `${app.titleFontSizePx}px`,
+    '--popup-artist-color': app.artistColor,
+    '--popup-artist-font-size': `${app.artistFontSizePx}px`,
+    '--popup-title-outline-size': `${app.titleOutline.sizePx}px`,
+    '--popup-title-outline-color': app.titleOutline.color,
+    '--popup-artist-outline-size': `${app.artistOutline.sizePx}px`,
+    '--popup-artist-outline-color': app.artistOutline.color,
+    '--popup-bg-img-opacity': app.backgroundImage.opacity,
+    '--popup-bg-img-blur': `${app.backgroundImage.blurPx}px`,
   }
 })
 
@@ -1173,7 +1254,8 @@ onUnmounted(() => {
   position: absolute;
   left: 2rem;
   bottom: 2rem;
-  transform: translate(var(--popup-base-x, 0px), var(--popup-base-y, 0px));
+  transform: translate(var(--popup-base-x, 0px), var(--popup-base-y, 0px)) scale(var(--popup-scale, 1));
+  transform-origin: bottom left;
   display: flex;
   align-items: center;
   gap: 0.8rem;
@@ -1181,12 +1263,32 @@ onUnmounted(() => {
   max-width: 520px;
   padding: 0.7rem 0.8rem;
   border-radius: 12px;
-  background: rgba(0, 0, 0, 0.8);
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  overflow: hidden;
+  background: var(--popup-bg-color, rgba(0, 0, 0, 0.8));
+  border: 1px solid var(--popup-border-color, rgba(255, 255, 255, 0.15));
   backdrop-filter: blur(2px);
 }
 
+.now-playing-bg-art {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+.now-playing-bg-art-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: var(--popup-bg-img-opacity, 1);
+  filter: blur(var(--popup-bg-img-blur, 0px));
+  transform: scale(1.1);
+}
+
 .now-playing-cover {
+  position: relative;
+  z-index: 1;
   width: 58px;
   height: 58px;
   border-radius: 8px;
@@ -1195,24 +1297,30 @@ onUnmounted(() => {
 }
 
 .now-playing-info {
+  position: relative;
+  z-index: 1;
   flex: 1;
   min-width: 0;
 }
 
 .now-playing-title {
   margin: 0;
-  color: #ffffff;
+  color: var(--popup-title-color, #ffffff);
   font-weight: 700;
-  font-size: 1rem;
+  font-size: var(--popup-title-font-size, 1rem);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  text-shadow: var(--popup-title-outline-color, #000000) 0 0 var(--popup-title-outline-size, 0px),
+               var(--popup-title-outline-color, #000000) 0 0 var(--popup-title-outline-size, 0px);
 }
 
 .now-playing-artist {
   margin: 0.2rem 0 0.45rem;
-  color: rgba(255, 255, 255, 0.8);
-  font-size: 0.84rem;
+  color: var(--popup-artist-color, rgba(255, 255, 255, 0.8));
+  font-size: var(--popup-artist-font-size, 0.84rem);
+  text-shadow: var(--popup-artist-outline-color, #000000) 0 0 var(--popup-artist-outline-size, 0px),
+               var(--popup-artist-outline-color, #000000) 0 0 var(--popup-artist-outline-size, 0px);
 }
 
 .now-playing-progress-track {
@@ -1243,6 +1351,6 @@ onUnmounted(() => {
   transform: translate(
     calc(var(--popup-base-x, 0px) + var(--popup-motion-x, 0px)),
     calc(var(--popup-base-y, 0px) + var(--popup-motion-y, 0px))
-  );
+  ) scale(var(--popup-scale, 1));
 }
 </style>
