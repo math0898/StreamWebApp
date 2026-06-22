@@ -277,6 +277,49 @@
           </div>
         </div>
 
+        <div v-else-if="mod.type === 'timer'" class="timer-section">
+          <p class="timer-display" :style="{ color: mod.color }">{{ timerDisplays[mod.id] ?? '00:00.00' }}</p>
+          <div v-if="mod.targetType !== 'datetime'" class="counter-row">
+            <button
+              class="counter-btn"
+              :class="{ 'action-activate': mod.status !== 'running' }"
+              :disabled="mod.status === 'running'"
+              @click="timerStart(mod)"
+            >▶ Start</button>
+            <button
+              class="counter-btn"
+              :class="{ 'action-hide': mod.status === 'running' }"
+              :disabled="mod.status !== 'running'"
+              @click="timerPause(mod)"
+            >⏸ Pause</button>
+            <button class="counter-btn-sm reset" @click="timerReset(mod)">Reset</button>
+          </div>
+          <p v-else class="timer-datetime-note">Target: {{ formatTimerDatetime(mod.targetDateTime) }}</p>
+        </div>
+
+        <div v-else-if="mod.type === 'chat'" class="chat-section">
+          <div class="chat-status-row">
+            <span
+              class="chat-status-dot"
+              :class="'chat-' + (chatStatuses[mod.id] ?? 'disconnected')"
+            ></span>
+            <span class="chat-status-label">{{ mod.channel ? '#' + mod.channel : 'No channel set' }}</span>
+            <span class="chat-connection-state">{{ chatStatuses[mod.id] ?? 'disconnected' }}</span>
+          </div>
+          <div class="chat-preview">
+            <div
+              v-for="msg in (chatMessages[mod.id] ?? []).slice(-5)"
+              :key="msg.id"
+              class="chat-preview-line"
+            >
+              <span class="chat-preview-user" :style="{ color: msg.color }">{{ msg.username }}</span>
+              <span class="chat-preview-colon">:</span>
+              <span class="chat-preview-text">{{ msg.message }}</span>
+            </div>
+            <div v-if="!(chatMessages[mod.id] ?? []).length" class="chat-preview-empty">No messages yet</div>
+          </div>
+        </div>
+
         <!-- Edit panel (all types) -->
         <div v-if="editOpen[mod.id]" class="edit-panel">
 
@@ -291,7 +334,7 @@
               <input type="text" :value="mod.label" @change="patchMod(mod.id, { label: $event.target.value })" />
             </div>
             <div class="edit-row">
-              <label class="edit-label">Color</label>
+              <label class="edit-label">Color <a href="#" class="brand-reset-link" @click.prevent="resetBrandSection(mod, ['color'])" title="Reset to brand bar color">↺</a></label>
               <input type="color" :value="mod.color" @input="patchMod(mod.id, { color: $event.target.value })" />
             </div>
             <p class="edit-sub">Bar</p>
@@ -309,6 +352,54 @@
               <label class="edit-label">{{ f.label }}</label>
               <input type="number" :step="f.step" :value="mod.value[f.key]" @change="patchMod(mod.id, { value: { [f.key]: $event.target.valueAsNumber } })" />
             </div>
+            <p class="edit-sub">Transform</p>
+            <div v-for="f in transformFields" :key="mod.id+'p'+f.key" class="edit-row">
+              <label class="edit-label">{{ f.label }}</label>
+              <input type="number" :step="f.step" :value="mod.transform?.[f.key] ?? (f.key.startsWith('scale') ? 1 : 0)" @change="patchMod(mod.id, { transform: { ...mod.transform, [f.key]: $event.target.valueAsNumber } })" />
+            </div>
+            <p class="edit-sub">Opacity <a href="#" class="brand-reset-link" @click.prevent="resetBrandSection(mod, ['opacity'])" title="Reset to brand">↺</a></p>
+            <div class="edit-row">
+              <label class="edit-label">Opacity</label>
+              <input type="number" step="0.05" min="0" max="1" :value="mod.opacity ?? 1" @change="patchMod(mod.id, { opacity: $event.target.valueAsNumber })" />
+            </div>
+            <p class="edit-sub">Background <a href="#" class="brand-reset-link" @click.prevent="resetBrandSection(mod, ['background'])" title="Reset to brand">↺</a></p>
+            <div class="edit-row">
+              <label class="edit-label">Background</label>
+              <input type="color" :value="mod.background?.backgroundColor ?? '#000000'" @input="patchMod(mod.id, { background: { ...mod.background, backgroundColor: $event.target.value } })" />
+              <input type="number" min="0" max="255" step="1" class="alpha-input" :value="mod.background?.backgroundAlpha ?? 0" @change="patchMod(mod.id, { background: { ...mod.background, backgroundAlpha: $event.target.valueAsNumber } })" title="Alpha (0–255)" />
+            </div>
+            <div class="edit-row">
+              <label class="edit-label">Border</label>
+              <input type="color" :value="mod.background?.borderColor ?? '#ffffff'" @input="patchMod(mod.id, { background: { ...mod.background, borderColor: $event.target.value } })" />
+              <input type="number" min="0" max="255" step="1" class="alpha-input" :value="mod.background?.borderAlpha ?? 0" @change="patchMod(mod.id, { background: { ...mod.background, borderAlpha: $event.target.valueAsNumber } })" title="Alpha (0–255)" />
+            </div>
+            <p class="edit-sub">Animation <a href="#" class="brand-reset-link" @click.prevent="resetBrandSection(mod, ['animation'])" title="Reset to brand">↺</a></p>
+            <div class="edit-row">
+              <label class="edit-label">Duration (sec)</label>
+              <input type="number" min="0" step="0.05" :value="mod.animation?.transitionDurationSec ?? 0.35" @change="patchMod(mod.id, { animation: { ...mod.animation, transitionDurationSec: $event.target.valueAsNumber } })" />
+            </div>
+            <div class="edit-row">
+              <label class="edit-label">Motion Direction</label>
+              <select :value="mod.animation?.motionDirection ?? 'none'" @change="patchMod(mod.id, { animation: { ...mod.animation, motionDirection: $event.target.value } })">
+                <option value="none">None (fade only)</option>
+                <option value="up">Vertical Up</option>
+                <option value="down">Vertical Down</option>
+                <option value="left">Horizontal Left</option>
+                <option value="right">Horizontal Right</option>
+              </select>
+            </div>
+            <div class="edit-row">
+              <label class="edit-label">Distance (px)</label>
+              <input type="number" min="0" step="1" :value="mod.animation?.motionDistancePx ?? 14" @change="patchMod(mod.id, { animation: { ...mod.animation, motionDistancePx: $event.target.valueAsNumber } })" />
+            </div>
+            <div class="edit-row">
+              <label class="edit-label">Interpolation</label>
+              <select :value="mod.animation?.motionInterpolation ?? 'linear'" @change="patchMod(mod.id, { animation: { ...mod.animation, motionInterpolation: $event.target.value } })">
+                <option value="linear">Linear</option>
+                <option value="quadratic">Quadratic</option>
+                <option value="exponential">Exponential</option>
+              </select>
+            </div>
           </template>
 
           <template v-else-if="mod.type === 'image'">
@@ -324,14 +415,53 @@
               <label class="edit-label">Alt Text</label>
               <input type="text" class="wide-input" :value="mod.alt" @change="patchMod(mod.id, { alt: $event.target.value })" />
             </div>
-            <div class="edit-row">
-              <label class="edit-label">Opacity</label>
-              <input type="number" step="0.1" min="0" max="1" :value="mod.opacity" @change="patchMod(mod.id, { opacity: $event.target.valueAsNumber })" />
-            </div>
             <p class="edit-sub">Transform</p>
             <div v-for="f in transformFields" :key="mod.id+'i'+f.key" class="edit-row">
               <label class="edit-label">{{ f.label }}</label>
-              <input type="number" :step="f.step" :value="mod.transform[f.key]" @change="patchMod(mod.id, { transform: { [f.key]: $event.target.valueAsNumber } })" />
+              <input type="number" :step="f.step" :value="mod.transform?.[f.key] ?? (f.key.startsWith('scale') ? 1 : 0)" @change="patchMod(mod.id, { transform: { ...mod.transform, [f.key]: $event.target.valueAsNumber } })" />
+            </div>
+            <p class="edit-sub">Opacity <a href="#" class="brand-reset-link" @click.prevent="resetBrandSection(mod, ['opacity'])" title="Reset to brand">↺</a></p>
+            <div class="edit-row">
+              <label class="edit-label">Opacity</label>
+              <input type="number" step="0.05" min="0" max="1" :value="mod.opacity ?? 1" @change="patchMod(mod.id, { opacity: $event.target.valueAsNumber })" />
+            </div>
+            <p class="edit-sub">Background <a href="#" class="brand-reset-link" @click.prevent="resetBrandSection(mod, ['background'])" title="Reset to brand">↺</a></p>
+            <div class="edit-row">
+              <label class="edit-label">Background</label>
+              <input type="color" :value="mod.background?.backgroundColor ?? '#000000'" @input="patchMod(mod.id, { background: { ...mod.background, backgroundColor: $event.target.value } })" />
+              <input type="number" min="0" max="255" step="1" class="alpha-input" :value="mod.background?.backgroundAlpha ?? 0" @change="patchMod(mod.id, { background: { ...mod.background, backgroundAlpha: $event.target.valueAsNumber } })" title="Alpha (0–255)" />
+            </div>
+            <div class="edit-row">
+              <label class="edit-label">Border</label>
+              <input type="color" :value="mod.background?.borderColor ?? '#ffffff'" @input="patchMod(mod.id, { background: { ...mod.background, borderColor: $event.target.value } })" />
+              <input type="number" min="0" max="255" step="1" class="alpha-input" :value="mod.background?.borderAlpha ?? 0" @change="patchMod(mod.id, { background: { ...mod.background, borderAlpha: $event.target.valueAsNumber } })" title="Alpha (0–255)" />
+            </div>
+            <p class="edit-sub">Animation <a href="#" class="brand-reset-link" @click.prevent="resetBrandSection(mod, ['animation'])" title="Reset to brand">↺</a></p>
+            <div class="edit-row">
+              <label class="edit-label">Duration (sec)</label>
+              <input type="number" min="0" step="0.05" :value="mod.animation?.transitionDurationSec ?? 0.35" @change="patchMod(mod.id, { animation: { ...mod.animation, transitionDurationSec: $event.target.valueAsNumber } })" />
+            </div>
+            <div class="edit-row">
+              <label class="edit-label">Motion Direction</label>
+              <select :value="mod.animation?.motionDirection ?? 'none'" @change="patchMod(mod.id, { animation: { ...mod.animation, motionDirection: $event.target.value } })">
+                <option value="none">None (fade only)</option>
+                <option value="up">Vertical Up</option>
+                <option value="down">Vertical Down</option>
+                <option value="left">Horizontal Left</option>
+                <option value="right">Horizontal Right</option>
+              </select>
+            </div>
+            <div class="edit-row">
+              <label class="edit-label">Distance (px)</label>
+              <input type="number" min="0" step="1" :value="mod.animation?.motionDistancePx ?? 14" @change="patchMod(mod.id, { animation: { ...mod.animation, motionDistancePx: $event.target.valueAsNumber } })" />
+            </div>
+            <div class="edit-row">
+              <label class="edit-label">Interpolation</label>
+              <select :value="mod.animation?.motionInterpolation ?? 'linear'" @change="patchMod(mod.id, { animation: { ...mod.animation, motionInterpolation: $event.target.value } })">
+                <option value="linear">Linear</option>
+                <option value="quadratic">Quadratic</option>
+                <option value="exponential">Exponential</option>
+              </select>
             </div>
           </template>
 
@@ -345,13 +475,56 @@
               <input type="text" class="wide-input" :value="mod.text" @change="patchMod(mod.id, { text: $event.target.value })" />
             </div>
             <div class="edit-row">
-              <label class="edit-label">Color</label>
+              <label class="edit-label">Color <a href="#" class="brand-reset-link" @click.prevent="resetBrandSection(mod, ['color'])" title="Reset to brand text color">↺</a></label>
               <input type="color" :value="mod.color" @input="patchMod(mod.id, { color: $event.target.value })" />
             </div>
             <p class="edit-sub">Transform</p>
             <div v-for="f in textTransformFields" :key="mod.id+'x'+f.key" class="edit-row">
               <label class="edit-label">{{ f.label }}</label>
-              <input type="number" :step="f.step" :value="mod.transform[f.key]" @change="patchMod(mod.id, { transform: { [f.key]: $event.target.valueAsNumber } })" />
+              <input type="number" :step="f.step" :value="mod.transform?.[f.key] ?? (f.key.startsWith('scale') ? 1 : (f.key === 'fontSize' ? 32 : 0))" @change="patchMod(mod.id, { transform: { ...mod.transform, [f.key]: $event.target.valueAsNumber } })" />
+            </div>
+            <p class="edit-sub">Opacity <a href="#" class="brand-reset-link" @click.prevent="resetBrandSection(mod, ['opacity'])" title="Reset to brand">↺</a></p>
+            <div class="edit-row">
+              <label class="edit-label">Opacity</label>
+              <input type="number" step="0.05" min="0" max="1" :value="mod.opacity ?? 1" @change="patchMod(mod.id, { opacity: $event.target.valueAsNumber })" />
+            </div>
+            <p class="edit-sub">Background <a href="#" class="brand-reset-link" @click.prevent="resetBrandSection(mod, ['background'])" title="Reset to brand">↺</a></p>
+            <div class="edit-row">
+              <label class="edit-label">Background</label>
+              <input type="color" :value="mod.background?.backgroundColor ?? '#000000'" @input="patchMod(mod.id, { background: { ...mod.background, backgroundColor: $event.target.value } })" />
+              <input type="number" min="0" max="255" step="1" class="alpha-input" :value="mod.background?.backgroundAlpha ?? 0" @change="patchMod(mod.id, { background: { ...mod.background, backgroundAlpha: $event.target.valueAsNumber } })" title="Alpha (0–255)" />
+            </div>
+            <div class="edit-row">
+              <label class="edit-label">Border</label>
+              <input type="color" :value="mod.background?.borderColor ?? '#ffffff'" @input="patchMod(mod.id, { background: { ...mod.background, borderColor: $event.target.value } })" />
+              <input type="number" min="0" max="255" step="1" class="alpha-input" :value="mod.background?.borderAlpha ?? 0" @change="patchMod(mod.id, { background: { ...mod.background, borderAlpha: $event.target.valueAsNumber } })" title="Alpha (0–255)" />
+            </div>
+            <p class="edit-sub">Animation <a href="#" class="brand-reset-link" @click.prevent="resetBrandSection(mod, ['animation'])" title="Reset to brand">↺</a></p>
+            <div class="edit-row">
+              <label class="edit-label">Duration (sec)</label>
+              <input type="number" min="0" step="0.05" :value="mod.animation?.transitionDurationSec ?? 0.35" @change="patchMod(mod.id, { animation: { ...mod.animation, transitionDurationSec: $event.target.valueAsNumber } })" />
+            </div>
+            <div class="edit-row">
+              <label class="edit-label">Motion Direction</label>
+              <select :value="mod.animation?.motionDirection ?? 'none'" @change="patchMod(mod.id, { animation: { ...mod.animation, motionDirection: $event.target.value } })">
+                <option value="none">None (fade only)</option>
+                <option value="up">Vertical Up</option>
+                <option value="down">Vertical Down</option>
+                <option value="left">Horizontal Left</option>
+                <option value="right">Horizontal Right</option>
+              </select>
+            </div>
+            <div class="edit-row">
+              <label class="edit-label">Distance (px)</label>
+              <input type="number" min="0" step="1" :value="mod.animation?.motionDistancePx ?? 14" @change="patchMod(mod.id, { animation: { ...mod.animation, motionDistancePx: $event.target.valueAsNumber } })" />
+            </div>
+            <div class="edit-row">
+              <label class="edit-label">Interpolation</label>
+              <select :value="mod.animation?.motionInterpolation ?? 'linear'" @change="patchMod(mod.id, { animation: { ...mod.animation, motionInterpolation: $event.target.value } })">
+                <option value="linear">Linear</option>
+                <option value="quadratic">Quadratic</option>
+                <option value="exponential">Exponential</option>
+              </select>
             </div>
           </template>
 
@@ -443,7 +616,7 @@
             </div>
             <p class="edit-sub">Colors</p>
             <div class="edit-row">
-              <label class="edit-label">Text</label>
+              <label class="edit-label">Text <a href="#" class="brand-reset-link" @click.prevent="resetBrandSection(mod, ['appearance.textColor'])" title="Reset to brand text color">↺</a></label>
               <input
                 type="color"
                 :value="leaderboardAppearance(mod).textColor"
@@ -451,7 +624,7 @@
               />
             </div>
             <div class="edit-row">
-              <label class="edit-label">User Default</label>
+              <label class="edit-label">User Default <a href="#" class="brand-reset-link" @click.prevent="resetBrandSection(mod, ['appearance.defaultUsernameColor'])" title="Reset to brand default username color">↺</a></label>
               <input
                 type="color"
                 :value="leaderboardAppearance(mod).defaultUsernameColor"
@@ -459,7 +632,7 @@
               />
             </div>
             <div class="edit-row">
-              <label class="edit-label">Focus Highlight</label>
+              <label class="edit-label">Focus Highlight <a href="#" class="brand-reset-link" @click.prevent="resetBrandSection(mod, ['appearance.focusHighlightColor'])" title="Reset to brand highlight color">↺</a></label>
               <input
                 type="color"
                 :value="leaderboardAppearance(mod).focusHighlightColor"
@@ -477,41 +650,30 @@
               />
             </div>
             <div class="edit-row">
-              <label class="edit-label">Background</label>
+              <label class="edit-label">Best Highlight <a href="#" class="brand-reset-link" @click.prevent="resetBrandSection(mod, ['appearance.bestHighlightColor'])" title="Reset to brand best highlight color">↺</a></label>
               <input
                 type="color"
-                :value="leaderboardAppearance(mod).backgroundColor"
-                @input="patchLeaderboardAppearance(mod, { backgroundColor: $event.target.value })"
-              />
-              <input
-                type="number"
-                min="0"
-                max="255"
-                step="1"
-                class="alpha-input"
-                :value="leaderboardAppearance(mod).backgroundAlpha"
-                @change="patchLeaderboardAppearance(mod, { backgroundAlpha: $event.target.valueAsNumber })"
-                title="Alpha (0–255)"
+                :value="leaderboardAppearance(mod).bestHighlightColor"
+                @input="patchLeaderboardAppearance(mod, { bestHighlightColor: $event.target.value })"
               />
             </div>
             <div class="edit-row">
-              <label class="edit-label">Border</label>
+              <label class="edit-label">Good Highlight <a href="#" class="brand-reset-link" @click.prevent="resetBrandSection(mod, ['appearance.goodHighlightColor'])" title="Reset to brand good highlight color">↺</a></label>
               <input
                 type="color"
-                :value="leaderboardAppearance(mod).borderColor"
-                @input="patchLeaderboardAppearance(mod, { borderColor: $event.target.value })"
-              />
-              <input
-                type="number"
-                min="0"
-                max="255"
-                step="1"
-                class="alpha-input"
-                :value="leaderboardAppearance(mod).borderAlpha"
-                @change="patchLeaderboardAppearance(mod, { borderAlpha: $event.target.valueAsNumber })"
-                title="Alpha (0–255)"
+                :value="leaderboardAppearance(mod).goodHighlightColor"
+                @input="patchLeaderboardAppearance(mod, { goodHighlightColor: $event.target.value })"
               />
             </div>
+            <div class="edit-row">
+              <label class="edit-label">Bad Highlight <a href="#" class="brand-reset-link" @click.prevent="resetBrandSection(mod, ['appearance.badHighlightColor'])" title="Reset to brand bad highlight color">↺</a></label>
+              <input
+                type="color"
+                :value="leaderboardAppearance(mod).badHighlightColor"
+                @input="patchLeaderboardAppearance(mod, { badHighlightColor: $event.target.value })"
+              />
+            </div>
+
             <div class="edit-row">
               <label class="edit-label">Number Color</label>
               <select
@@ -523,7 +685,7 @@
               </select>
             </div>
             <div v-if="leaderboardAppearance(mod).numberColorMode === 'solid'" class="edit-row">
-              <label class="edit-label">Number Solid</label>
+              <label class="edit-label">Number Solid <a href="#" class="brand-reset-link" @click.prevent="resetBrandSection(mod, ['appearance.numberColor'])" title="Reset to brand number color">↺</a></label>
               <input
                 type="color"
                 :value="leaderboardAppearance(mod).numberColor"
@@ -689,55 +851,55 @@
                 />
                 <span class="edit-unit">s</span>
               </div>
-              <div class="edit-row">
-                <label class="edit-label">Fade + Motion Duration (sec)</label>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.05"
-                  :value="leaderboardAppearance(mod).autoHide.animation.transitionDurationSec"
-                  @change="patchLeaderboardAppearance(mod, { autoHide: { ...leaderboardAppearance(mod).autoHide, animation: { ...leaderboardAppearance(mod).autoHide.animation, transitionDurationSec: $event.target.valueAsNumber } } })"
-                />
-              </div>
-              <div class="edit-row">
-                <label class="edit-label">Motion Direction</label>
-                <select
-                  :value="leaderboardAppearance(mod).autoHide.animation.motionDirection"
-                  @change="patchLeaderboardAppearance(mod, { autoHide: { ...leaderboardAppearance(mod).autoHide, animation: { ...leaderboardAppearance(mod).autoHide.animation, motionDirection: $event.target.value } } })"
-                >
-                  <option value="none">None (fade only)</option>
-                  <option value="up">Vertical Up</option>
-                  <option value="down">Vertical Down</option>
-                  <option value="left">Horizontal Left</option>
-                  <option value="right">Horizontal Right</option>
-                </select>
-              </div>
-              <div class="edit-row">
-                <label class="edit-label">Motion Distance (px)</label>
-                <input
-                  type="number"
-                  min="0"
-                  step="1"
-                  :value="leaderboardAppearance(mod).autoHide.animation.motionDistancePx"
-                  @change="patchLeaderboardAppearance(mod, { autoHide: { ...leaderboardAppearance(mod).autoHide, animation: { ...leaderboardAppearance(mod).autoHide.animation, motionDistancePx: $event.target.valueAsNumber } } })"
-                />
-              </div>
-              <div class="edit-row">
-                <label class="edit-label">Motion Interpolation</label>
-                <select
-                  :value="leaderboardAppearance(mod).autoHide.animation.motionInterpolation"
-                  @change="patchLeaderboardAppearance(mod, { autoHide: { ...leaderboardAppearance(mod).autoHide, animation: { ...leaderboardAppearance(mod).autoHide.animation, motionInterpolation: $event.target.value } } })"
-                >
-                  <option value="linear">Linear</option>
-                  <option value="quadratic">Quadratic</option>
-                  <option value="exponential">Exponential</option>
-                </select>
-              </div>
+
             </template>
             <p class="edit-sub">Transform</p>
             <div v-for="f in transformFields" :key="mod.id+'l'+f.key" class="edit-row">
               <label class="edit-label">{{ f.label }}</label>
-              <input type="number" :step="f.step" :value="mod.transform?.[f.key] ?? (f.key.startsWith('scale') ? 1 : 0)" @change="patchMod(mod.id, { transform: { [f.key]: $event.target.valueAsNumber } })" />
+              <input type="number" :step="f.step" :value="mod.transform?.[f.key] ?? (f.key.startsWith('scale') ? 1 : 0)" @change="patchMod(mod.id, { transform: { ...mod.transform, [f.key]: $event.target.valueAsNumber } })" />
+            </div>
+            <p class="edit-sub">Opacity <a href="#" class="brand-reset-link" @click.prevent="resetBrandSection(mod, ['opacity'])" title="Reset to brand">↺</a></p>
+            <div class="edit-row">
+              <label class="edit-label">Opacity</label>
+              <input type="number" step="0.05" min="0" max="1" :value="mod.opacity ?? 1" @change="patchMod(mod.id, { opacity: $event.target.valueAsNumber })" />
+            </div>
+            <p class="edit-sub">Background <a href="#" class="brand-reset-link" @click.prevent="resetBrandSection(mod, ['background'])" title="Reset to brand">↺</a></p>
+            <div class="edit-row">
+              <label class="edit-label">Background</label>
+              <input type="color" :value="mod.background?.backgroundColor ?? '#000000'" @input="patchMod(mod.id, { background: { ...mod.background, backgroundColor: $event.target.value } })" />
+              <input type="number" min="0" max="255" step="1" class="alpha-input" :value="mod.background?.backgroundAlpha ?? 0" @change="patchMod(mod.id, { background: { ...mod.background, backgroundAlpha: $event.target.valueAsNumber } })" title="Alpha (0–255)" />
+            </div>
+            <div class="edit-row">
+              <label class="edit-label">Border</label>
+              <input type="color" :value="mod.background?.borderColor ?? '#ffffff'" @input="patchMod(mod.id, { background: { ...mod.background, borderColor: $event.target.value } })" />
+              <input type="number" min="0" max="255" step="1" class="alpha-input" :value="mod.background?.borderAlpha ?? 0" @change="patchMod(mod.id, { background: { ...mod.background, borderAlpha: $event.target.valueAsNumber } })" title="Alpha (0–255)" />
+            </div>
+            <p class="edit-sub">Animation <a href="#" class="brand-reset-link" @click.prevent="resetBrandSection(mod, ['animation'])" title="Reset to brand">↺</a></p>
+            <div class="edit-row">
+              <label class="edit-label">Duration (sec)</label>
+              <input type="number" min="0" step="0.05" :value="mod.animation?.transitionDurationSec ?? 0.35" @change="patchMod(mod.id, { animation: { ...mod.animation, transitionDurationSec: $event.target.valueAsNumber } })" />
+            </div>
+            <div class="edit-row">
+              <label class="edit-label">Motion Direction</label>
+              <select :value="mod.animation?.motionDirection ?? 'none'" @change="patchMod(mod.id, { animation: { ...mod.animation, motionDirection: $event.target.value } })">
+                <option value="none">None (fade only)</option>
+                <option value="up">Vertical Up</option>
+                <option value="down">Vertical Down</option>
+                <option value="left">Horizontal Left</option>
+                <option value="right">Horizontal Right</option>
+              </select>
+            </div>
+            <div class="edit-row">
+              <label class="edit-label">Distance (px)</label>
+              <input type="number" min="0" step="1" :value="mod.animation?.motionDistancePx ?? 14" @change="patchMod(mod.id, { animation: { ...mod.animation, motionDistancePx: $event.target.valueAsNumber } })" />
+            </div>
+            <div class="edit-row">
+              <label class="edit-label">Interpolation</label>
+              <select :value="mod.animation?.motionInterpolation ?? 'linear'" @change="patchMod(mod.id, { animation: { ...mod.animation, motionInterpolation: $event.target.value } })">
+                <option value="linear">Linear</option>
+                <option value="quadratic">Quadratic</option>
+                <option value="exponential">Exponential</option>
+              </select>
             </div>
             <p class="edit-sub">Participants</p>
             <div
@@ -856,6 +1018,307 @@
             <button class="counter-btn-sm" @click="addLeaderboardParticipant(mod)">+ Add Participant</button>
           </template>
 
+          <template v-else-if="mod.type === 'timer'">
+            <div class="edit-row">
+              <label class="edit-label">Name</label>
+              <input type="text" class="wide-input" placeholder="Timer" :value="mod.name" @change="patchMod(mod.id, { name: $event.target.value })" />
+            </div>
+            <div class="edit-row">
+              <label class="edit-label">Mode</label>
+              <select :value="mod.mode" @change="patchMod(mod.id, { mode: $event.target.value })">
+                <option value="countdown">Countdown</option>
+                <option value="countup">Count Up</option>
+              </select>
+            </div>
+            <div class="edit-row">
+              <label class="edit-label">Precision</label>
+              <select :value="mod.precision" @change="patchMod(mod.id, { precision: $event.target.value })">
+                <option value="millis">Milliseconds (.mmm)</option>
+                <option value="hundredths">Hundredths (.xx)</option>
+                <option value="tenths">Tenths (.x)</option>
+                <option value="seconds">Seconds</option>
+                <option value="minutes">Minutes</option>
+              </select>
+            </div>
+            <div class="edit-row">
+              <label class="edit-label">Max Unit</label>
+              <select :value="mod.maxUnit ?? 'auto'" @change="patchMod(mod.id, { maxUnit: $event.target.value })">
+                <option value="auto">Auto (days/hours/minutes/sec)</option>
+                <option value="hours">Hours (HH:MM:SS)</option>
+                <option value="minutes">Minutes (MM:SS)</option>
+                <option value="seconds">Seconds (S)</option>
+              </select>
+            </div>
+            <div class="edit-row">
+              <label class="edit-label">Target Type</label>
+              <select :value="mod.targetType" @change="patchMod(mod.id, { targetType: $event.target.value })">
+                <option value="duration">Duration</option>
+                <option value="datetime">Date/Time</option>
+              </select>
+            </div>
+            <template v-if="mod.targetType === 'duration'">
+              <div class="edit-row">
+                <label class="edit-label">Duration</label>
+                <input type="number" min="1" :value="displayMs(mod.duration, getDurationUnit(mod.id))" @change="patchMod(mod.id, { duration: storeMs($event.target.valueAsNumber, getDurationUnit(mod.id)) })" />
+                <select :value="getDurationUnit(mod.id)" @change="setDurationUnit(mod.id, $event.target.value)">
+                  <option value="hours">Hours</option>
+                  <option value="minutes">Minutes</option>
+                  <option value="seconds">Seconds</option>
+                  <option value="millis">Milliseconds</option>
+                </select>
+                <button class="reset-sm" @click="patchMod(mod.id, { duration: storeMs(5, 'minutes') })">↺</button>
+              </div>
+            </template>
+            <template v-else>
+              <div class="edit-row">
+                <label class="edit-label">Target Date/Time</label>
+                <input type="datetime-local" :value="mod.targetDateTime ? mod.targetDateTime.slice(0, 16) : ''" @change="patchMod(mod.id, { targetDateTime: $event.target.value ? new Date($event.target.value).toISOString() : '' })" />
+              </div>
+            </template>
+            <template v-if="mod.mode === 'countup'">
+              <div class="edit-row">
+                <label class="edit-label">Max Duration (0=unlimited)</label>
+                <input type="number" min="0" :value="displayMs(mod.maxDuration, getDurationUnit(mod.id))" @change="patchMod(mod.id, { maxDuration: storeMs($event.target.valueAsNumber, getDurationUnit(mod.id)) })" />
+                <select :value="getDurationUnit(mod.id)" @change="setDurationUnit(mod.id, $event.target.value)">
+                  <option value="hours">Hours</option>
+                  <option value="minutes">Minutes</option>
+                  <option value="seconds">Seconds</option>
+                  <option value="millis">Milliseconds</option>
+                </select>
+              </div>
+            </template>
+            <div class="edit-row">
+              <label class="edit-label">Color <a href="#" class="brand-reset-link" @click.prevent="resetBrandSection(mod, ['color'])" title="Reset to brand text color">↺</a></label>
+              <input type="color" :value="mod.color" @input="patchMod(mod.id, { color: $event.target.value })" />
+            </div>
+            <p class="edit-sub">On Complete</p>
+            <div class="edit-row checkbox-row">
+              <label class="edit-label">Freeze at zero / max</label>
+              <input
+                type="checkbox"
+                :checked="mod.onComplete?.freezeAtZero"
+                @change="patchMod(mod.id, { onComplete: { ...mod.onComplete, freezeAtZero: $event.target.checked } })"
+              />
+            </div>
+            <div class="edit-row checkbox-row">
+              <label class="edit-label">Flash animation</label>
+              <input
+                type="checkbox"
+                :checked="mod.onComplete?.flashAnimation !== false"
+                @change="patchMod(mod.id, { onComplete: { ...mod.onComplete, flashAnimation: $event.target.checked } })"
+              />
+            </div>
+            <div class="edit-row checkbox-row">
+              <label class="edit-label">Play sound</label>
+              <input
+                type="checkbox"
+                :checked="mod.onComplete?.playSound"
+                @change="patchMod(mod.id, { onComplete: { ...mod.onComplete, playSound: $event.target.checked } })"
+              />
+            </div>
+            <div class="edit-row">
+              <label class="edit-label">Sound URL</label>
+              <input type="text" class="wide-input" :value="mod.onComplete?.soundSrc ?? ''" @change="patchMod(mod.id, { onComplete: { ...mod.onComplete, soundSrc: $event.target.value } })" />
+            </div>
+            <p class="edit-sub">Transform</p>
+            <div v-for="f in transformFields" :key="mod.id+'tm'+f.key" class="edit-row">
+              <label class="edit-label">{{ f.label }}</label>
+              <input type="number" :step="f.step" :value="mod.transform?.[f.key] ?? (f.key.startsWith('scale') ? 1 : 0)" @change="patchMod(mod.id, { transform: { ...mod.transform, [f.key]: $event.target.valueAsNumber } })" />
+            </div>
+            <p class="edit-sub">Opacity <a href="#" class="brand-reset-link" @click.prevent="resetBrandSection(mod, ['opacity'])" title="Reset to brand">↺</a></p>
+            <div class="edit-row">
+              <label class="edit-label">Opacity</label>
+              <input type="number" step="0.05" min="0" max="1" :value="mod.opacity ?? 1" @change="patchMod(mod.id, { opacity: $event.target.valueAsNumber })" />
+            </div>
+            <p class="edit-sub">Background <a href="#" class="brand-reset-link" @click.prevent="resetBrandSection(mod, ['background'])" title="Reset to brand">↺</a></p>
+            <div class="edit-row">
+              <label class="edit-label">Background</label>
+              <input type="color" :value="mod.background?.backgroundColor ?? '#000000'" @input="patchMod(mod.id, { background: { ...mod.background, backgroundColor: $event.target.value } })" />
+              <input type="number" min="0" max="255" step="1" class="alpha-input" :value="mod.background?.backgroundAlpha ?? 0" @change="patchMod(mod.id, { background: { ...mod.background, backgroundAlpha: $event.target.valueAsNumber } })" title="Alpha (0–255)" />
+            </div>
+            <div class="edit-row">
+              <label class="edit-label">Border</label>
+              <input type="color" :value="mod.background?.borderColor ?? '#ffffff'" @input="patchMod(mod.id, { background: { ...mod.background, borderColor: $event.target.value } })" />
+              <input type="number" min="0" max="255" step="1" class="alpha-input" :value="mod.background?.borderAlpha ?? 0" @change="patchMod(mod.id, { background: { ...mod.background, borderAlpha: $event.target.valueAsNumber } })" title="Alpha (0–255)" />
+            </div>
+            <p class="edit-sub">Animation <a href="#" class="brand-reset-link" @click.prevent="resetBrandSection(mod, ['animation'])" title="Reset to brand">↺</a></p>
+            <div class="edit-row">
+              <label class="edit-label">Duration (sec)</label>
+              <input type="number" min="0" step="0.05" :value="mod.animation?.transitionDurationSec ?? 0.35" @change="patchMod(mod.id, { animation: { ...mod.animation, transitionDurationSec: $event.target.valueAsNumber } })" />
+            </div>
+            <div class="edit-row">
+              <label class="edit-label">Motion Direction</label>
+              <select :value="mod.animation?.motionDirection ?? 'none'" @change="patchMod(mod.id, { animation: { ...mod.animation, motionDirection: $event.target.value } })">
+                <option value="none">None (fade only)</option>
+                <option value="up">Vertical Up</option>
+                <option value="down">Vertical Down</option>
+                <option value="left">Horizontal Left</option>
+                <option value="right">Horizontal Right</option>
+              </select>
+            </div>
+            <div class="edit-row">
+              <label class="edit-label">Distance (px)</label>
+              <input type="number" min="0" step="1" :value="mod.animation?.motionDistancePx ?? 14" @change="patchMod(mod.id, { animation: { ...mod.animation, motionDistancePx: $event.target.valueAsNumber } })" />
+            </div>
+            <div class="edit-row">
+              <label class="edit-label">Interpolation</label>
+              <select :value="mod.animation?.motionInterpolation ?? 'linear'" @change="patchMod(mod.id, { animation: { ...mod.animation, motionInterpolation: $event.target.value } })">
+                <option value="linear">Linear</option>
+                <option value="quadratic">Quadratic</option>
+                <option value="exponential">Exponential</option>
+              </select>
+            </div>
+          </template>
+          <template v-else-if="mod.type === 'chat'">
+            <div class="edit-row">
+              <label class="edit-label">Name</label>
+              <input type="text" class="wide-input" placeholder="Twitch Chat" :value="mod.name" @change="patchMod(mod.id, { name: $event.target.value })" />
+            </div>
+            <div class="edit-row">
+              <label class="edit-label">Platform</label>
+              <select :value="mod.platform ?? 'twitch'" @change="patchMod(mod.id, { platform: $event.target.value })">
+                <option value="twitch">Twitch</option>
+                <option value="youtube" disabled>YouTube (Coming Soon)</option>
+              </select>
+            </div>
+            <div class="edit-row">
+              <label class="edit-label">Channel</label>
+              <input type="text" class="wide-input" placeholder="channelname" :value="mod.channel" @change="patchMod(mod.id, { channel: $event.target.value })" />
+            </div>
+            <div class="edit-row">
+              <label class="edit-label">Message Prefix</label>
+              <input type="text" class="wide-input" placeholder="Twitch" :value="mod.prefix" @change="patchMod(mod.id, { prefix: $event.target.value })" />
+            </div>
+
+            <p class="edit-sub">Twitch Connection</p>
+            <div class="chat-credential-note">
+              <p>Enter your Twitch Client ID and OAuth token below. To get these:</p>
+              <ol>
+                <li>Go to <a href="https://dev.twitch.tv/console/apps" target="_blank" rel="noopener">Twitch Developer Console</a></li>
+                <li>Create an app (use <code>http://localhost</code> as OAuth Redirect URL)</li>
+                <li>Copy the Client ID</li>
+                <li>Generate an OAuth token at <a href="https://twitchtokengenerator.com/" target="_blank" rel="noopener">twitchtokengenerator.com</a> (scope: <code>chat:read</code>)</li>
+              </ol>
+            </div>
+            <div class="edit-row">
+              <label class="edit-label">Client ID</label>
+              <input type="text" class="wide-input" :value="mod.clientId" @change="patchMod(mod.id, { clientId: $event.target.value })" />
+            </div>
+            <div class="edit-row">
+              <label class="edit-label">OAuth Token</label>
+              <input type="password" class="wide-input" :value="mod.accessToken" @change="patchMod(mod.id, { accessToken: $event.target.value })" />
+            </div>
+            <div class="chat-connect-row">
+              <button
+                class="action-btn action-activate"
+                :disabled="!mod.channel || !mod.clientId || !mod.accessToken"
+                @click="connectChat(mod)"
+              >Connect</button>
+              <button
+                class="action-btn action-hide"
+                :disabled="(chatStatuses[mod.id] ?? 'disconnected') === 'disconnected'"
+                @click="disconnectChat(mod)"
+              >Disconnect</button>
+              <span
+                class="chat-status-dot"
+                :class="'chat-' + (chatStatuses[mod.id] ?? 'disconnected')"
+              ></span>
+              <span class="chat-connection-state">{{ chatStatuses[mod.id] ?? 'disconnected' }}</span>
+            </div>
+
+            <p class="edit-sub">Appearance</p>
+            <div class="edit-row">
+              <label class="edit-label">Message Limit</label>
+              <input type="number" min="1" max="500" step="1" :value="mod.messageLimit ?? 50" @change="patchMod(mod.id, { messageLimit: $event.target.valueAsNumber })" />
+            </div>
+            <div class="edit-row">
+              <label class="edit-label">Fade Out (sec)</label>
+              <input type="number" min="0" step="1" :value="mod.fadeOutSec ?? 30" @change="patchMod(mod.id, { fadeOutSec: $event.target.valueAsNumber })" />
+            </div>
+            <div class="edit-row">
+              <label class="edit-label">Max Lines</label>
+              <input type="number" min="-1" step="1" :value="mod.maxLines ?? 0" @change="patchMaxLines(mod, $event.target.value)" />
+              <span class="edit-unit">0=no wrap, -1=unlimited</span>
+            </div>
+            <div class="edit-row checkbox-row">
+              <label class="edit-label">Show Badges</label>
+              <input
+                type="checkbox"
+                :checked="mod.showBadges !== false"
+                @change="patchMod(mod.id, { showBadges: $event.target.checked })"
+              />
+            </div>
+            <div class="edit-row checkbox-row">
+              <label class="edit-label">Show Timestamps</label>
+              <input
+                type="checkbox"
+                :checked="mod.showTimestamps === true"
+                @change="patchMod(mod.id, { showTimestamps: $event.target.checked })"
+              />
+            </div>
+            <div class="edit-row">
+              <label class="edit-label">Font Size</label>
+              <input type="number" min="8" max="72" step="1" :value="mod.fontSize ?? 18" @change="patchMod(mod.id, { fontSize: $event.target.valueAsNumber })" />
+              <span class="edit-unit">px</span>
+            </div>
+            <div class="edit-row">
+              <label class="edit-label">Username Color</label>
+              <input type="color" :value="mod.usernameColor ?? '#ffffff'" @input="patchMod(mod.id, { usernameColor: $event.target.value })" />
+            </div>
+            <div class="edit-row">
+              <label class="edit-label">Message Color</label>
+              <input type="color" :value="mod.messageColor ?? '#ffffff'" @input="patchMod(mod.id, { messageColor: $event.target.value })" />
+            </div>
+            <p class="edit-sub">Transform</p>
+            <div v-for="f in transformFields" :key="mod.id+'ch'+f.key" class="edit-row">
+              <label class="edit-label">{{ f.label }}</label>
+              <input type="number" :step="f.step" :value="mod.transform?.[f.key] ?? (f.key.startsWith('scale') ? 1 : 0)" @change="patchMod(mod.id, { transform: { ...mod.transform, [f.key]: $event.target.valueAsNumber } })" />
+            </div>
+            <p class="edit-sub">Opacity <a href="#" class="brand-reset-link" @click.prevent="resetBrandSection(mod, ['opacity'])" title="Reset to brand">↺</a></p>
+            <div class="edit-row">
+              <label class="edit-label">Opacity</label>
+              <input type="number" step="0.05" min="0" max="1" :value="mod.opacity ?? 1" @change="patchMod(mod.id, { opacity: $event.target.valueAsNumber })" />
+            </div>
+            <p class="edit-sub">Background <a href="#" class="brand-reset-link" @click.prevent="resetBrandSection(mod, ['background'])" title="Reset to brand">↺</a></p>
+            <div class="edit-row">
+              <label class="edit-label">Background</label>
+              <input type="color" :value="mod.background?.backgroundColor ?? '#000000'" @input="patchMod(mod.id, { background: { ...mod.background, backgroundColor: $event.target.value } })" />
+              <input type="number" min="0" max="255" step="1" class="alpha-input" :value="mod.background?.backgroundAlpha ?? 0" @change="patchMod(mod.id, { background: { ...mod.background, backgroundAlpha: $event.target.valueAsNumber } })" title="Alpha (0–255)" />
+            </div>
+            <div class="edit-row">
+              <label class="edit-label">Border</label>
+              <input type="color" :value="mod.background?.borderColor ?? '#ffffff'" @input="patchMod(mod.id, { background: { ...mod.background, borderColor: $event.target.value } })" />
+              <input type="number" min="0" max="255" step="1" class="alpha-input" :value="mod.background?.borderAlpha ?? 0" @change="patchMod(mod.id, { background: { ...mod.background, borderAlpha: $event.target.valueAsNumber } })" title="Alpha (0–255)" />
+            </div>
+            <p class="edit-sub">Animation <a href="#" class="brand-reset-link" @click.prevent="resetBrandSection(mod, ['animation'])" title="Reset to brand">↺</a></p>
+            <div class="edit-row">
+              <label class="edit-label">Duration (sec)</label>
+              <input type="number" min="0" step="0.05" :value="mod.animation?.transitionDurationSec ?? 0.35" @change="patchMod(mod.id, { animation: { ...mod.animation, transitionDurationSec: $event.target.valueAsNumber } })" />
+            </div>
+            <div class="edit-row">
+              <label class="edit-label">Motion Direction</label>
+              <select :value="mod.animation?.motionDirection ?? 'none'" @change="patchMod(mod.id, { animation: { ...mod.animation, motionDirection: $event.target.value } })">
+                <option value="none">None (fade only)</option>
+                <option value="up">Vertical Up</option>
+                <option value="down">Vertical Down</option>
+                <option value="left">Horizontal Left</option>
+                <option value="right">Horizontal Right</option>
+              </select>
+            </div>
+            <div class="edit-row">
+              <label class="edit-label">Distance (px)</label>
+              <input type="number" min="0" step="1" :value="mod.animation?.motionDistancePx ?? 14" @change="patchMod(mod.id, { animation: { ...mod.animation, motionDistancePx: $event.target.valueAsNumber } })" />
+            </div>
+            <div class="edit-row">
+              <label class="edit-label">Interpolation</label>
+              <select :value="mod.animation?.motionInterpolation ?? 'linear'" @change="patchMod(mod.id, { animation: { ...mod.animation, motionInterpolation: $event.target.value } })">
+                <option value="linear">Linear</option>
+                <option value="quadratic">Quadratic</option>
+                <option value="exponential">Exponential</option>
+              </select>
+            </div>
+          </template>
+
         </div>
       </div>
     </div>
@@ -867,6 +1330,8 @@
         <option value="text">Text</option>
         <option value="dj">DJ</option>
         <option value="leaderboard">Leaderboard</option>
+        <option value="timer">Timer</option>
+        <option value="chat">Twitch Chat</option>
       </select>
       <button class="add-module-btn" @click="addModule">+ Add Module</button>
     </div>
@@ -876,7 +1341,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, nextTick, computed } from 'vue'
+import { ref, reactive, onMounted, onUnmounted, nextTick, computed } from 'vue'
 
 const overlayList    = ref([])
 const activeId       = ref('')
@@ -890,8 +1355,56 @@ const steps   = reactive({})
 const setVals = reactive({})
 const editOpen = reactive({})
 const participantEditOpen = reactive({})
+const timerDisplays = reactive({})
+const durationUnits = reactive({})
+const chatMessages = reactive({})
+const chatStatuses = reactive({})
+
+const UNIT_MS = { hours: 3600000, minutes: 60000, seconds: 1000, millis: 1 }
+
+function displayMs(ms, unit) {
+  if (!Number.isFinite(ms)) return 0
+  const divisor = UNIT_MS[unit] ?? 60000
+  return Math.round(ms / divisor)
+}
+
+function storeMs(value, unit) {
+  if (!Number.isFinite(value) || value < 0) return 0
+  const multiplier = UNIT_MS[unit] ?? 60000
+  return Math.round(value * multiplier)
+}
+
+function getDurationUnit(modId) {
+  return durationUnits[modId] ?? 'minutes'
+}
+
+function setDurationUnit(modId, unit) {
+  durationUnits[modId] = unit
+}
+
 const music = ref(null)
 const musicEditOpen = ref(false)
+const brand = ref(null)
+
+async function fetchBrand() {
+  try {
+    const res = await fetch('/api/brand')
+    brand.value = await res.json()
+  } catch (err) {
+    console.warn('[dashboard] Failed to load brand:', err)
+  }
+}
+
+function hasBrandOverride(mod, path) {
+  return Array.isArray(mod?.brandOverrides) && mod.brandOverrides.includes(path)
+}
+
+function resetBrandSection(mod, paths) {
+  // Remove the given paths from brandOverrides so module inherits from brand
+  const overrides = Array.isArray(mod.brandOverrides) ? mod.brandOverrides : []
+  const next = overrides.filter(p => !paths.includes(p))
+  patchMod(mod.id, { brandOverrides: next })
+}
 const canPause = computed(() => !!music.value && music.value.status !== 'paused')
 const canResume = computed(() => !!music.value && music.value.status === 'paused')
 const popupSettings = reactive({
@@ -971,6 +1484,8 @@ function moduleTitle(mod) {
   if (mod.type === 'text') return mod.name?.trim() || 'Text Module'
   if (mod.type === 'dj') return mod.name?.trim() || 'DJ Module'
   if (mod.type === 'leaderboard') return mod.name?.trim() || 'Leaderboard Module'
+  if (mod.type === 'timer') return mod.name?.trim() || 'Timer Module'
+  if (mod.type === 'chat') return mod.name?.trim() || 'Chat Module'
   return mod.label || 'ProgressBar Module'
 }
 
@@ -1045,15 +1560,50 @@ async function fetchOverlayList() {
   return data
 }
 
+let timerInterval = null
+let sseSource = null
+
 onMounted(async () => {
   try {
     const { activeId: aid } = await fetchOverlayList()
     editingId.value = aid
     await fetchOverlayState(aid)
     await fetchMusicState()
+    await fetchBrand()
   } catch (err) {
     console.warn('[dashboard] Failed to load initial state:', err)
   }
+  refreshTimerDisplays()
+  timerInterval = setInterval(refreshTimerDisplays, 53)
+
+  sseSource = new EventSource('/api/events')
+  sseSource.onmessage = (event) => {
+    const data = JSON.parse(event.data)
+    if (Array.isArray(data?.modules)) {
+      modules.value = data.modules
+      if (data?.music) music.value = data.music
+      if (data?.brand) brand.value = data.brand
+    }
+    // Update chat messages & statuses from SSE
+    if (data?.chatMessages) {
+      for (const [modId, msgs] of Object.entries(data.chatMessages)) {
+        chatMessages[modId] = msgs
+      }
+    }
+    if (data?.chatStatuses) {
+      for (const [modId, status] of Object.entries(data.chatStatuses)) {
+        chatStatuses[modId] = status
+      }
+    }
+  }
+  sseSource.onerror = () => {
+    // will auto-reconnect
+  }
+})
+
+onUnmounted(() => {
+  if (timerInterval) clearInterval(timerInterval)
+  if (sseSource) sseSource.close()
 })
 
 async function fetchMusicState() {
@@ -1142,6 +1692,11 @@ async function confirmDelete() {
   }
 }
 
+function patchMaxLines(mod, rawValue) {
+  const v = parseInt(rawValue, 10)
+  if (Number.isFinite(v)) patchMod(mod.id, { maxLines: v })
+}
+
 async function patchMod(moduleId, patch) {
   const mod = modules.value.find(m => m.id === moduleId)
   if (mod) {
@@ -1174,7 +1729,8 @@ async function addModule() {
       body: JSON.stringify({ type: newModuleType.value }),
     })
     const mod = await res.json()
-    modules.value.push(mod)
+    const idx = modules.value.findIndex(m => m.id === mod.id)
+    if (idx !== -1) { modules.value[idx] = mod } else { modules.value.push(mod) }
     steps[mod.id] = 1
     setVals[mod.id] = ''
     editOpen[mod.id] = false
@@ -1252,6 +1808,202 @@ function updateSetVal(modId, val) {
   setVals[modId] = val
 }
 
+function computeTimerMs(mod) {
+  if (!mod) return 0
+  const now = Date.now()
+  if (mod.targetType === 'datetime' && mod.targetDateTime) {
+    const target = new Date(mod.targetDateTime).getTime()
+    if (!Number.isFinite(target)) return 0
+    return target - now
+  }
+  if (mod.status === 'stopped') {
+    return mod.mode === 'countdown' ? mod.duration : 0
+  }
+  let elapsed
+  if (mod.status === 'running') {
+    elapsed = now - mod.startedAt - mod.pausedMsTotal
+  } else {
+    elapsed = mod.pausedAt - mod.startedAt - mod.pausedMsTotal
+  }
+  if (mod.mode === 'countdown') {
+    const remaining = mod.duration - elapsed
+    if (remaining <= 0) {
+      if (mod.onComplete?.freezeAtZero) return 0
+      return remaining
+    }
+    return remaining
+  }
+  if (mod.maxDuration > 0 && elapsed >= mod.maxDuration) {
+    if (mod.onComplete?.freezeAtZero) return mod.maxDuration
+    return elapsed
+  }
+  return elapsed
+}
+
+function formatTimerValue(ms, precision, maxUnit = 'auto') {
+  if (!Number.isFinite(ms)) return '00:00.00'
+  const sign = ms < 0 ? '-' : ''
+  const abs = Math.abs(ms)
+
+  if (precision === 'minutes') {
+    const totalMinutes = Math.round(abs / 60000)
+
+    if (maxUnit === 'minutes' || maxUnit === 'seconds') {
+      return `${sign}${totalMinutes}m`
+    }
+
+    if (maxUnit === 'hours') {
+      const h = Math.floor(totalMinutes / 60)
+      const m = totalMinutes % 60
+      return `${sign}${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
+    }
+
+    const days = Math.floor(totalMinutes / 1440)
+    const h = Math.floor((totalMinutes % 1440) / 60)
+    const m = totalMinutes % 60
+    let result = sign
+    if (days > 0) result += `${days}d `
+    result += `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
+    return result
+  }
+
+  const totalSec = Math.floor(abs / 1000)
+  const frac = abs % 1000
+
+  if (maxUnit === 'seconds') {
+    let result = sign + String(totalSec)
+    if (precision === 'millis') result += `.${String(frac).padStart(3, '0')}`
+    else if (precision === 'hundredths') result += `.${String(Math.floor(frac / 10)).padStart(2, '0')}`
+    else if (precision === 'tenths') result += `.${String(Math.floor(frac / 100))}`
+    return result
+  }
+
+  if (maxUnit === 'minutes') {
+    const totalMinutes = Math.floor(totalSec / 60)
+    const sec = totalSec % 60
+    let result = `${sign}${String(totalMinutes).padStart(2, '0')}:${String(sec).padStart(2, '0')}`
+    if (precision === 'millis') result += `.${String(frac).padStart(3, '0')}`
+    else if (precision === 'hundredths') result += `.${String(Math.floor(frac / 10)).padStart(2, '0')}`
+    else if (precision === 'tenths') result += `.${String(Math.floor(frac / 100))}`
+    return result
+  }
+
+  let days, hours, minutes, seconds
+  if (maxUnit === 'hours') {
+    days = 0
+    hours = Math.floor(totalSec / 3600)
+    minutes = Math.floor((totalSec % 3600) / 60)
+    seconds = totalSec % 60
+  } else {
+    days = Math.floor(totalSec / 86400)
+    hours = Math.floor((totalSec % 86400) / 3600)
+    minutes = Math.floor((totalSec % 3600) / 60)
+    seconds = totalSec % 60
+  }
+
+  let result = sign
+  if (days > 0) result += `${days}d `
+  result += `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+
+  if (precision === 'millis') result += `.${String(frac).padStart(3, '0')}`
+  else if (precision === 'hundredths') result += `.${String(Math.floor(frac / 10)).padStart(2, '0')}`
+  else if (precision === 'tenths') result += `.${String(Math.floor(frac / 100))}`
+
+  return result
+}
+
+function refreshTimerDisplays() {
+  for (const mod of modules.value) {
+    if (mod.type === 'timer') {
+      const ms = computeTimerMs(mod)
+      timerDisplays[mod.id] = formatTimerValue(ms, mod.precision || 'hundredths', mod.maxUnit || 'auto')
+    }
+  }
+}
+
+function formatTimerDatetime(iso) {
+  if (!iso) return 'Not set'
+  try {
+    return new Date(iso).toLocaleString()
+  } catch {
+    return iso
+  }
+}
+
+async function timerStart(mod) {
+  try {
+    const res = await fetch(`/api/overlays/${encodeURIComponent(editingId.value)}/modules/${encodeURIComponent(mod.id)}/timer/start`, {
+      method: 'POST',
+    })
+    const updated = await res.json()
+    const idx = modules.value.findIndex(m => m.id === mod.id)
+    if (idx !== -1) modules.value[idx] = updated
+  } catch (err) {
+    console.warn('[dashboard] Failed to start timer:', err)
+    try { await fetchOverlayState(editingId.value) } catch {}
+  }
+}
+
+async function timerPause(mod) {
+  try {
+    const res = await fetch(`/api/overlays/${encodeURIComponent(editingId.value)}/modules/${encodeURIComponent(mod.id)}/timer/pause`, {
+      method: 'POST',
+    })
+    const updated = await res.json()
+    const idx = modules.value.findIndex(m => m.id === mod.id)
+    if (idx !== -1) modules.value[idx] = updated
+  } catch (err) {
+    console.warn('[dashboard] Failed to pause timer:', err)
+    try { await fetchOverlayState(editingId.value) } catch {}
+  }
+}
+
+async function timerReset(mod) {
+  try {
+    const res = await fetch(`/api/overlays/${encodeURIComponent(editingId.value)}/modules/${encodeURIComponent(mod.id)}/timer/reset`, {
+      method: 'POST',
+    })
+    const updated = await res.json()
+    const idx = modules.value.findIndex(m => m.id === mod.id)
+    if (idx !== -1) modules.value[idx] = updated
+  } catch (err) {
+    console.warn('[dashboard] Failed to reset timer:', err)
+    try { await fetchOverlayState(editingId.value) } catch {}
+  }
+}
+
+async function connectChat(mod) {
+  try {
+    const res = await fetch(`/api/overlays/${encodeURIComponent(editingId.value)}/modules/${encodeURIComponent(mod.id)}/chat/connect`, {
+      method: 'POST',
+    })
+    const data = await res.json()
+    if (data.status === 'connected') {
+      chatStatuses[mod.id] = 'connected'
+    } else {
+      chatStatuses[mod.id] = 'failed'
+      console.warn('[dashboard] Chat connect failed:', data)
+    }
+  } catch (err) {
+    console.warn('[dashboard] Chat connect error:', err)
+    chatStatuses[mod.id] = 'failed'
+  }
+}
+
+async function disconnectChat(mod) {
+  try {
+    const res = await fetch(`/api/overlays/${encodeURIComponent(editingId.value)}/modules/${encodeURIComponent(mod.id)}/chat/disconnect`, {
+      method: 'POST',
+    })
+    const data = await res.json()
+    if (data.status === 'disconnected') {
+      chatStatuses[mod.id] = 'disconnected'
+    }
+  } catch (err) {
+    console.warn('[dashboard] Chat disconnect error:', err)
+  }
+}
+
 function sortedLeaderboardParticipants(mod) {
   const participants = Array.isArray(mod?.participants) ? mod.participants : []
   return [...participants].sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
@@ -1295,26 +2047,11 @@ function leaderboardAppearance(mod) {
     : []
 
   const srcAutoHide = source.autoHide && typeof source.autoHide === 'object' ? source.autoHide : {}
-  const srcAnimation = srcAutoHide.animation && typeof srcAutoHide.animation === 'object' ? srcAutoHide.animation : {}
   const autoHide = {
     enabled: srcAutoHide.enabled === true,
     hideDelaySec: typeof srcAutoHide.hideDelaySec === 'number' && srcAutoHide.hideDelaySec >= 0 ? srcAutoHide.hideDelaySec : 30,
     periodicShowSec: typeof srcAutoHide.periodicShowSec === 'number' && srcAutoHide.periodicShowSec >= 0 ? srcAutoHide.periodicShowSec : 5,
     periodicIntervalSec: typeof srcAutoHide.periodicIntervalSec === 'number' && srcAutoHide.periodicIntervalSec >= 0 ? srcAutoHide.periodicIntervalSec : 60,
-    animation: {
-      transitionDurationSec: typeof srcAnimation.transitionDurationSec === 'number' && srcAnimation.transitionDurationSec >= 0
-        ? srcAnimation.transitionDurationSec
-        : 0.35,
-      motionDirection: ['none', 'up', 'down', 'left', 'right'].includes(srcAnimation.motionDirection)
-        ? srcAnimation.motionDirection
-        : 'down',
-      motionDistancePx: typeof srcAnimation.motionDistancePx === 'number' && srcAnimation.motionDistancePx >= 0
-        ? srcAnimation.motionDistancePx
-        : 14,
-      motionInterpolation: ['linear', 'quadratic', 'exponential'].includes(srcAnimation.motionInterpolation)
-        ? srcAnimation.motionInterpolation
-        : 'linear',
-    },
   }
 
   return {
@@ -1327,10 +2064,9 @@ function leaderboardAppearance(mod) {
     numberColorKeys,
     focusHighlightColor: typeof source.focusHighlightColor === 'string' && /^#[0-9a-f]{6}$/i.test(source.focusHighlightColor) ? source.focusHighlightColor : '#82b1ff',
     focusHighlightAlpha: Number.isFinite(Number(source.focusHighlightAlpha)) && Number(source.focusHighlightAlpha) >= 0 && Number(source.focusHighlightAlpha) <= 255 ? Math.round(Number(source.focusHighlightAlpha)) : 255,
-    backgroundColor: typeof source.backgroundColor === 'string' && /^#[0-9a-f]{6}$/i.test(source.backgroundColor) ? source.backgroundColor : '#000000',
-    backgroundAlpha: Number.isFinite(Number(source.backgroundAlpha)) && Number(source.backgroundAlpha) >= 0 && Number(source.backgroundAlpha) <= 255 ? Math.round(Number(source.backgroundAlpha)) : 199,
-    borderColor: typeof source.borderColor === 'string' && /^#[0-9a-f]{6}$/i.test(source.borderColor) ? source.borderColor : '#ffffff',
-    borderAlpha: Number.isFinite(Number(source.borderAlpha)) && Number(source.borderAlpha) >= 0 && Number(source.borderAlpha) <= 255 ? Math.round(Number(source.borderAlpha)) : 36,
+    bestHighlightColor: typeof source.bestHighlightColor === 'string' && /^#[0-9a-f]{6}$/i.test(source.bestHighlightColor) ? source.bestHighlightColor : '#ffd700',
+    goodHighlightColor: typeof source.goodHighlightColor === 'string' && /^#[0-9a-f]{6}$/i.test(source.goodHighlightColor) ? source.goodHighlightColor : '#4caf50',
+    badHighlightColor: typeof source.badHighlightColor === 'string' && /^#[0-9a-f]{6}$/i.test(source.badHighlightColor) ? source.badHighlightColor : '#f44336',
     backgroundImage: leaderboardArt(source.backgroundImage),
     titleOutline: leaderboardTextOutline(source.titleOutline),
     participantOutline: leaderboardTextOutline(source.participantOutline),
@@ -1362,13 +2098,7 @@ function patchLeaderboardAppearance(mod, patch) {
       ? { ...current.scoreOutline, ...patch.scoreOutline }
       : current.scoreOutline,
     autoHide: patch.autoHide && typeof patch.autoHide === 'object'
-      ? {
-        ...current.autoHide,
-        ...patch.autoHide,
-        animation: patch.autoHide.animation && typeof patch.autoHide.animation === 'object'
-          ? { ...current.autoHide.animation, ...patch.autoHide.animation }
-          : current.autoHide.animation,
-      }
+      ? { ...current.autoHide, ...patch.autoHide }
       : current.autoHide,
   }
   patchMod(mod.id, { appearance: next })
@@ -2170,5 +2900,123 @@ h1 {
   font-size: 0.8rem;
   color: #424242;
   margin-top: 1.5rem;
+}
+
+.brand-reset-link {
+  color: #7e57c2;
+  text-decoration: none;
+  font-size: 0.75rem;
+  margin-left: 0.25rem;
+  opacity: 0.6;
+  cursor: pointer;
+}
+
+.brand-reset-link:hover {
+  opacity: 1;
+}
+
+/* ── Chat module ─────────────────────────────────────── */
+.chat-status-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 0.3rem;
+  font-size: 0.85rem;
+}
+
+.chat-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+.chat-disconnected { background: #757575; }
+.chat-connecting   { background: #ffa726; }
+.chat-connected    { background: #66bb6a; }
+.chat-failed       { background: #ef5350; }
+
+.chat-status-label {
+  font-weight: 600;
+}
+
+.chat-connection-state {
+  font-size: 0.8rem;
+  color: #757575;
+  text-transform: capitalize;
+}
+
+.chat-preview {
+  font-size: 0.8rem;
+  max-height: 100px;
+  overflow-y: auto;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 4px;
+  padding: 0.3rem 0.5rem;
+}
+
+.chat-preview-line {
+  display: flex;
+  align-items: baseline;
+  gap: 0.15rem;
+  word-break: break-word;
+}
+
+.chat-preview-user {
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.chat-preview-colon {
+  color: #757575;
+  flex-shrink: 0;
+}
+
+.chat-preview-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chat-preview-empty {
+  color: #616161;
+  font-style: italic;
+  padding: 0.5rem 0;
+}
+
+.chat-credential-note {
+  font-size: 0.8rem;
+  color: #b0bec5;
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 4px;
+  padding: 0.5rem 0.7rem;
+  margin-bottom: 0.5rem;
+}
+
+.chat-credential-note ol {
+  margin: 0.3rem 0 0 1.2rem;
+  padding: 0;
+}
+
+.chat-credential-note li {
+  margin-bottom: 0.2rem;
+}
+
+.chat-credential-note a {
+  color: #82b1ff;
+}
+
+.chat-credential-note code {
+  background: rgba(0, 0, 0, 0.3);
+  padding: 0.1rem 0.3rem;
+  border-radius: 3px;
+  font-size: 0.85em;
+}
+
+.chat-connect-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
 }
 </style>
