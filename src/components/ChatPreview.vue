@@ -74,9 +74,8 @@ const messages = computed(() => chatMessages[props.modId] ?? [])
 }
 .chat-preview-line {
   line-height: 1.4;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
 }
 .chat-preview-user {
   font-weight: 600;
