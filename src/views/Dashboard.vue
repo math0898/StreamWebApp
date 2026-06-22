@@ -277,48 +277,19 @@
           </div>
         </div>
 
-        <div v-else-if="mod.type === 'timer'" class="timer-section">
-          <p class="timer-display" :style="{ color: mod.color }">{{ timerDisplays[mod.id] ?? '00:00.00' }}</p>
-          <div v-if="mod.targetType !== 'datetime'" class="counter-row">
-            <button
-              class="counter-btn"
-              :class="{ 'action-activate': mod.status !== 'running' }"
-              :disabled="mod.status === 'running'"
-              @click="timerStart(mod)"
-            >▶ Start</button>
-            <button
-              class="counter-btn"
-              :class="{ 'action-hide': mod.status === 'running' }"
-              :disabled="mod.status !== 'running'"
-              @click="timerPause(mod)"
-            >⏸ Pause</button>
-            <button class="counter-btn-sm reset" @click="timerReset(mod)">Reset</button>
-          </div>
-          <p v-else class="timer-datetime-note">Target: {{ formatTimerDatetime(mod.targetDateTime) }}</p>
-        </div>
+        <TimerDisplayBlock
+          v-else-if="mod.type === 'timer'"
+          :mod="mod"
+          @start="timerStart"
+          @pause="timerPause"
+          @reset="timerReset"
+        />
 
-        <div v-else-if="mod.type === 'chat'" class="chat-section">
-          <div class="chat-status-row">
-            <span
-              class="chat-status-dot"
-              :class="'chat-' + (chatStatuses[mod.id] ?? 'disconnected')"
-            ></span>
-            <span class="chat-status-label">{{ mod.channel ? '#' + mod.channel : 'No channel set' }}</span>
-            <span class="chat-connection-state">{{ chatStatuses[mod.id] ?? 'disconnected' }}</span>
-          </div>
-          <div class="chat-preview">
-            <div
-              v-for="msg in (chatMessages[mod.id] ?? []).slice(-5)"
-              :key="msg.id"
-              class="chat-preview-line"
-            >
-              <span class="chat-preview-user" :style="{ color: msg.color }">{{ msg.username }}</span>
-              <span class="chat-preview-colon">:</span>
-              <span class="chat-preview-text">{{ msg.message }}</span>
-            </div>
-            <div v-if="!(chatMessages[mod.id] ?? []).length" class="chat-preview-empty">No messages yet</div>
-          </div>
-        </div>
+        <ChatPreview
+          v-else-if="mod.type === 'chat'"
+          :mod-id="mod.id"
+          :channel="mod.channel"
+        />
 
         <!-- Edit panel (all types) -->
         <div v-if="editOpen[mod.id]" class="edit-panel">
@@ -1341,7 +1312,9 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, onUnmounted, nextTick, computed } from 'vue'
+import { ref, reactive, onMounted, onUnmounted, nextTick, computed, provide } from 'vue'
+import ChatPreview from '../components/ChatPreview.vue'
+import TimerDisplayBlock from '../components/TimerDisplayBlock.vue'
 
 const overlayList    = ref([])
 const activeId       = ref('')
@@ -1355,10 +1328,11 @@ const steps   = reactive({})
 const setVals = reactive({})
 const editOpen = reactive({})
 const participantEditOpen = reactive({})
-const timerDisplays = reactive({})
 const durationUnits = reactive({})
 const chatMessages = reactive({})
 const chatStatuses = reactive({})
+provide('chatMessages', chatMessages)
+provide('chatStatuses', chatStatuses)
 
 const UNIT_MS = { hours: 3600000, minutes: 60000, seconds: 1000, millis: 1 }
 
@@ -1560,7 +1534,6 @@ async function fetchOverlayList() {
   return data
 }
 
-let timerInterval = null
 let sseSource = null
 
 onMounted(async () => {
@@ -1573,14 +1546,9 @@ onMounted(async () => {
   } catch (err) {
     console.warn('[dashboard] Failed to load initial state:', err)
   }
-  refreshTimerDisplays()
-  timerInterval = setInterval(refreshTimerDisplays, 53)
-
   sseSource = new EventSource('/api/events')
   sseSource.onmessage = (event) => {
     const data = JSON.parse(event.data)
-    if (data?.music) music.value = data.music
-    if (data?.brand) brand.value = data.brand
     // Update chat messages & statuses from SSE
     if (data?.chatMessages) {
       for (const [modId, msgs] of Object.entries(data.chatMessages)) {
@@ -1599,7 +1567,6 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
-  if (timerInterval) clearInterval(timerInterval)
   if (sseSource) sseSource.close()
 })
 
@@ -1805,127 +1772,7 @@ function updateSetVal(modId, val) {
   setVals[modId] = val
 }
 
-function computeTimerMs(mod) {
-  if (!mod) return 0
-  const now = Date.now()
-  if (mod.targetType === 'datetime' && mod.targetDateTime) {
-    const target = new Date(mod.targetDateTime).getTime()
-    if (!Number.isFinite(target)) return 0
-    return target - now
-  }
-  if (mod.status === 'stopped') {
-    return mod.mode === 'countdown' ? mod.duration : 0
-  }
-  let elapsed
-  if (mod.status === 'running') {
-    elapsed = now - mod.startedAt - mod.pausedMsTotal
-  } else {
-    elapsed = mod.pausedAt - mod.startedAt - mod.pausedMsTotal
-  }
-  if (mod.mode === 'countdown') {
-    const remaining = mod.duration - elapsed
-    if (remaining <= 0) {
-      if (mod.onComplete?.freezeAtZero) return 0
-      return remaining
-    }
-    return remaining
-  }
-  if (mod.maxDuration > 0 && elapsed >= mod.maxDuration) {
-    if (mod.onComplete?.freezeAtZero) return mod.maxDuration
-    return elapsed
-  }
-  return elapsed
-}
 
-function formatTimerValue(ms, precision, maxUnit = 'auto') {
-  if (!Number.isFinite(ms)) return '00:00.00'
-  const sign = ms < 0 ? '-' : ''
-  const abs = Math.abs(ms)
-
-  if (precision === 'minutes') {
-    const totalMinutes = Math.round(abs / 60000)
-
-    if (maxUnit === 'minutes' || maxUnit === 'seconds') {
-      return `${sign}${totalMinutes}m`
-    }
-
-    if (maxUnit === 'hours') {
-      const h = Math.floor(totalMinutes / 60)
-      const m = totalMinutes % 60
-      return `${sign}${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
-    }
-
-    const days = Math.floor(totalMinutes / 1440)
-    const h = Math.floor((totalMinutes % 1440) / 60)
-    const m = totalMinutes % 60
-    let result = sign
-    if (days > 0) result += `${days}d `
-    result += `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
-    return result
-  }
-
-  const totalSec = Math.floor(abs / 1000)
-  const frac = abs % 1000
-
-  if (maxUnit === 'seconds') {
-    let result = sign + String(totalSec)
-    if (precision === 'millis') result += `.${String(frac).padStart(3, '0')}`
-    else if (precision === 'hundredths') result += `.${String(Math.floor(frac / 10)).padStart(2, '0')}`
-    else if (precision === 'tenths') result += `.${String(Math.floor(frac / 100))}`
-    return result
-  }
-
-  if (maxUnit === 'minutes') {
-    const totalMinutes = Math.floor(totalSec / 60)
-    const sec = totalSec % 60
-    let result = `${sign}${String(totalMinutes).padStart(2, '0')}:${String(sec).padStart(2, '0')}`
-    if (precision === 'millis') result += `.${String(frac).padStart(3, '0')}`
-    else if (precision === 'hundredths') result += `.${String(Math.floor(frac / 10)).padStart(2, '0')}`
-    else if (precision === 'tenths') result += `.${String(Math.floor(frac / 100))}`
-    return result
-  }
-
-  let days, hours, minutes, seconds
-  if (maxUnit === 'hours') {
-    days = 0
-    hours = Math.floor(totalSec / 3600)
-    minutes = Math.floor((totalSec % 3600) / 60)
-    seconds = totalSec % 60
-  } else {
-    days = Math.floor(totalSec / 86400)
-    hours = Math.floor((totalSec % 86400) / 3600)
-    minutes = Math.floor((totalSec % 3600) / 60)
-    seconds = totalSec % 60
-  }
-
-  let result = sign
-  if (days > 0) result += `${days}d `
-  result += `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
-
-  if (precision === 'millis') result += `.${String(frac).padStart(3, '0')}`
-  else if (precision === 'hundredths') result += `.${String(Math.floor(frac / 10)).padStart(2, '0')}`
-  else if (precision === 'tenths') result += `.${String(Math.floor(frac / 100))}`
-
-  return result
-}
-
-function refreshTimerDisplays() {
-  for (const mod of modules.value) {
-    if (mod.type === 'timer') {
-      const ms = computeTimerMs(mod)
-      timerDisplays[mod.id] = formatTimerValue(ms, mod.precision || 'hundredths', mod.maxUnit || 'auto')
-    }
-  }
-}
-
-function formatTimerDatetime(iso) {
-  if (!iso) return 'Not set'
-  try {
-    return new Date(iso).toLocaleString()
-  } catch {
-    return iso
-  }
-}
 
 async function timerStart(mod) {
   try {
