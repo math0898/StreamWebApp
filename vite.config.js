@@ -5,10 +5,11 @@ export default defineConfig({
   plugins: [vue()],
   server: {
     port: 3301,
+    host: '0.0.0.0',
     strictPort: true,
     proxy: {
-      '/api': 'http://localhost:3302',
-      '/Music': 'http://localhost:3302',
+      '/api': 'http://0.0.0.0:3302',
+      '/Music': 'http://0.0.0.0:3302',
     },
   },
   preview: {

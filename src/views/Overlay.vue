@@ -9,11 +9,11 @@
           class="progress-module"
           :style="progressContainerStyle(mod)"
         >
-          <span class="bar-label" :style="textStyle(mod.title)">{{ mod.label }}</span>
+          <span class="bar-label" :style="textStyle(mod.title, mod.bar)">{{ mod.label }}</span>
           <div class="bar-track" :style="trackStyle(mod.bar)">
-            <div class="bar-fill" :style="{ width: pct(mod.count, mod.max), background: mod.color }"></div>
+            <div class="bar-fill" :style="{ width: pct(mod.count, mod.max), background: brandColor(mod, 'progressBar') }"></div>
           </div>
-          <span class="bar-value" :style="textStyle(mod.value)">{{ mod.count }} / {{ mod.max }}</span>
+          <span class="bar-value" :style="textStyle(mod.value, mod.bar)">{{ mod.count }} / {{ mod.max }}</span>
         </div>
 
         <img
@@ -39,11 +39,11 @@
             :style="leaderboardShellStyle(mod)"
           >
             <div class="leaderboard-module" :style="leaderboardStyle(mod)">
-              <div v-if="leaderboardAppearance(mod).backgroundImage.src" class="leaderboard-background-art">
+              <div v-if="brandLeaderboardAppearance(mod).backgroundImage.src" class="leaderboard-background-art">
                 <img
-                  :src="resolveLeaderboardImageSrc(leaderboardAppearance(mod).backgroundImage.src, mod.id, null, 'background')"
+                  :src="resolveLeaderboardImageSrc(brandLeaderboardAppearance(mod).backgroundImage.src, mod.id, null, 'background')"
                   alt=""
-                  :style="leaderboardArtworkStyle(leaderboardAppearance(mod).backgroundImage)"
+                  :style="leaderboardArtworkStyle(brandLeaderboardAppearance(mod).backgroundImage)"
                 />
               </div>
               <div class="leaderboard-header" :style="leaderboardHeaderStyle(mod)">
@@ -57,7 +57,7 @@
                   :class="{
                     'leaderboard-row-focus': row.id === mod.focusParticipantId,
                     'leaderboard-row-divider': row.showDivider,
-                    'leaderboard-row-no-rank': !leaderboardAppearance(mod).showRankNumbers,
+                    'leaderboard-row-no-rank': !brandLeaderboardAppearance(mod).showRankNumbers,
                     'leaderboard-row-with-icon': leaderboardHasIcons(mod),
                   }"
                   :style="leaderboardRowStyle(mod, row)"
@@ -65,7 +65,7 @@
                   <div v-if="row.backdropImage?.src" class="leaderboard-row-backdrop">
                     <img :src="resolveLeaderboardImageSrc(row.backdropImage.src, mod.id, row.id, 'backdrop')" alt="" :style="leaderboardArtworkStyle(row.backdropImage)" />
                   </div>
-                  <span v-if="leaderboardAppearance(mod).showRankNumbers" class="leaderboard-rank" :style="leaderboardNumberStyle(mod, row)">#{{ row.rank }}</span>
+                  <span v-if="brandLeaderboardAppearance(mod).showRankNumbers" class="leaderboard-rank" :style="leaderboardNumberStyle(mod, row)">#{{ row.rank }}</span>
                   <span v-if="leaderboardHasIcons(mod)" class="leaderboard-icon-slot" :style="leaderboardIconSlotStyle(mod)">
                     <img
                       v-if="row.iconSrc"
@@ -82,6 +82,64 @@
             </div>
           </div>
         </transition>
+
+        <div
+          v-else-if="mod.type === 'timer'"
+          class="timer-module"
+          :class="{ 'timer-finished': timerFinished(mod) }"
+          :style="timerContainerStyle(mod)"
+        >
+          <audio
+            v-if="mod.onComplete?.playSound && mod.onComplete?.soundSrc"
+            ref="timerAudioRefs"
+            :data-module-id="mod.id"
+            :src="mod.onComplete.soundSrc"
+            preload="auto"
+          ></audio>
+          <div class="timer-time" :style="timerTimeStyle(mod)">{{ timerDisplays[mod.id] ?? '00:00.00' }}</div>
+          <div v-if="mod.name" class="timer-label">{{ mod.name }}</div>
+        </div>
+
+        <div
+          v-else-if="mod.type === 'chat'"
+          class="chat-module"
+          :style="chatContainerStyle(mod)"
+        >
+          <div class="chat-messages" :data-module-id="mod.id">
+            <transition-group name="chat-message">
+              <div
+                v-for="msg in (chatMessagesByMod[mod.id] ?? [])"
+                :key="msg.id"
+                class="chat-message-row"
+                :class="chatRowCls(mod)"
+              >
+                <span class="chat-prefix" v-if="mod.prefix">[{{ mod.prefix }}]</span>
+                <span class="chat-badges" v-if="mod.showBadges !== false">
+                  <img
+                    v-for="(badgeUrl, badgeName, bi) in (msg.badgeUrls ?? {})"
+                    :key="bi"
+                    class="chat-badge"
+                    :src="badgeUrl"
+                    :alt="badgeName"
+                    :title="badgeName"
+                  />
+                </span>
+                <span class="chat-username" :style="{ color: msg.color || mod.usernameColor }">{{ msg.username }}</span>
+                <span class="chat-colon">:</span>
+                <span class="chat-message-text" :style="chatTextStyle(mod)">
+                  <template v-if="msg.messageParts">
+                    <template v-for="(part, pi) in msg.messageParts" :key="pi">
+                      <img v-if="part.type === 'emote'" class="chat-emote" :src="part.url" :alt="part.id" :title="part.id" />
+                      <span v-else>{{ part.value }}</span>
+                    </template>
+                  </template>
+                  <span v-else>{{ msg.message }}</span>
+                  <span class="chat-timestamp" v-if="mod.showTimestamps">{{ formatChatTimestamp(msg.timestamp) }}</span>
+                </span>
+              </div>
+            </transition-group>
+          </div>
+        </div>
         </template>
       </template>
 
@@ -112,8 +170,13 @@ import { ref, reactive, onMounted, onUnmounted, computed } from 'vue'
 
 const modules = ref([])
 const music = ref(null)
+const brand = ref(null)
 const audioRef = ref(null)
+const chatMessagesByMod = reactive({})
 const musicProgressPct = ref(0)
+const timerDisplays = reactive({})
+const timerAudioRefs = ref([])
+const timerFinishedState = reactive({})
 const PROGRESS_UPDATE_INTERVAL_MS = 250
 const SYNC_TOLERANCE_SEC = 1
 const popupConfig = ref({
@@ -141,6 +204,7 @@ let popupEndTimer = null
 let popupPeriodicTimer = null
 let source = null
 let skipInFlight = false
+let overlayTimerInterval = null
 
 // Leaderboard auto-hide state
 const leaderboardVisualHidden = reactive({})
@@ -200,45 +264,300 @@ function pct(count, maxVal) {
   return `${Math.min(100, Math.max(0, (count / maxVal) * 100))}%`
 }
 
-function progressContainerStyle(mod) {
+function computeTimerMs(mod) {
+  if (!mod) return 0
+  const now = Date.now()
+  if (mod.targetType === 'datetime' && mod.targetDateTime) {
+    const target = new Date(mod.targetDateTime).getTime()
+    if (!Number.isFinite(target)) return 0
+    return target - now
+  }
+  if (mod.status === 'stopped') {
+    return mod.mode === 'countdown' ? mod.duration : 0
+  }
+  let elapsed
+  if (mod.status === 'running') {
+    elapsed = now - mod.startedAt - mod.pausedMsTotal
+  } else {
+    elapsed = mod.pausedAt - mod.startedAt - mod.pausedMsTotal
+  }
+  if (mod.mode === 'countdown') {
+    const remaining = mod.duration - elapsed
+    if (remaining <= 0) {
+      if (mod.onComplete?.freezeAtZero) return 0
+      return remaining
+    }
+    return remaining
+  }
+  if (mod.maxDuration > 0 && elapsed >= mod.maxDuration) {
+    if (mod.onComplete?.freezeAtZero) return mod.maxDuration
+    return elapsed
+  }
+  return elapsed
+}
+
+function formatTimerValue(ms, precision, maxUnit = 'auto') {
+  if (!Number.isFinite(ms)) return '00:00.00'
+  const sign = ms < 0 ? '-' : ''
+  const abs = Math.abs(ms)
+
+  if (precision === 'minutes') {
+    const totalMinutes = Math.round(abs / 60000)
+
+    if (maxUnit === 'minutes' || maxUnit === 'seconds') {
+      return `${sign}${totalMinutes}m`
+    }
+
+    if (maxUnit === 'hours') {
+      const h = Math.floor(totalMinutes / 60)
+      const m = totalMinutes % 60
+      return `${sign}${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
+    }
+
+    const days = Math.floor(totalMinutes / 1440)
+    const h = Math.floor((totalMinutes % 1440) / 60)
+    const m = totalMinutes % 60
+    let result = sign
+    if (days > 0) result += `${days}d `
+    result += `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
+    return result
+  }
+
+  const totalSec = Math.floor(abs / 1000)
+  const frac = abs % 1000
+
+  if (maxUnit === 'seconds') {
+    let result = sign + String(totalSec)
+    if (precision === 'millis') result += `.${String(frac).padStart(3, '0')}`
+    else if (precision === 'hundredths') result += `.${String(Math.floor(frac / 10)).padStart(2, '0')}`
+    else if (precision === 'tenths') result += `.${String(Math.floor(frac / 100))}`
+    return result
+  }
+
+  if (maxUnit === 'minutes') {
+    const totalMinutes = Math.floor(totalSec / 60)
+    const sec = totalSec % 60
+    let result = `${sign}${String(totalMinutes).padStart(2, '0')}:${String(sec).padStart(2, '0')}`
+    if (precision === 'millis') result += `.${String(frac).padStart(3, '0')}`
+    else if (precision === 'hundredths') result += `.${String(Math.floor(frac / 10)).padStart(2, '0')}`
+    else if (precision === 'tenths') result += `.${String(Math.floor(frac / 100))}`
+    return result
+  }
+
+  let days, hours, minutes, seconds
+  if (maxUnit === 'hours') {
+    days = 0
+    hours = Math.floor(totalSec / 3600)
+    minutes = Math.floor((totalSec % 3600) / 60)
+    seconds = totalSec % 60
+  } else {
+    days = Math.floor(totalSec / 86400)
+    hours = Math.floor((totalSec % 86400) / 3600)
+    minutes = Math.floor((totalSec % 3600) / 60)
+    seconds = totalSec % 60
+  }
+
+  let result = sign
+  if (days > 0) result += `${days}d `
+  result += `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+
+  if (precision === 'millis') result += `.${String(frac).padStart(3, '0')}`
+  else if (precision === 'hundredths') result += `.${String(Math.floor(frac / 10)).padStart(2, '0')}`
+  else if (precision === 'tenths') result += `.${String(Math.floor(frac / 100))}`
+
+  return result
+}
+
+function refreshTimerDisplays() {
+  for (const mod of modules.value) {
+    if (mod.type === 'timer') {
+      const ms = computeTimerMs(mod)
+      timerDisplays[mod.id] = formatTimerValue(ms, mod.precision || 'hundredths', mod.maxUnit || 'auto')
+    }
+  }
+}
+
+function timerFinished(mod) {
+  if (!mod || mod.type !== 'timer') return false
+  if (mod.targetType === 'datetime') {
+    if (mod.onComplete?.freezeAtZero) {
+      const ms = computeTimerMs(mod)
+      return ms <= 0
+    }
+    return false
+  }
+  if (mod.mode === 'countdown') {
+    if (mod.status === 'stopped') return false
+    const elapsed = Date.now() - mod.startedAt - mod.pausedMsTotal
+    return elapsed >= mod.duration
+  }
+  if (mod.mode === 'countup' && mod.maxDuration > 0) {
+    const elapsed = Date.now() - mod.startedAt - mod.pausedMsTotal
+    return elapsed >= mod.maxDuration
+  }
+  return false
+}
+
+let prevTimerFinished = {}
+
+function checkTimerFinishedSound(modules) {
+  if (!Array.isArray(modules)) return
+  for (const mod of modules) {
+    if (mod.type !== 'timer') continue
+    const nowFinished = timerFinished(mod)
+    const wasFinished = prevTimerFinished[mod.id]
+    if (nowFinished && !wasFinished && mod.onComplete?.playSound && mod.onComplete?.soundSrc) {
+      const audios = timerAudioRefs.value
+      if (Array.isArray(audios)) {
+        const el = audios.find(a => a?.dataset?.moduleId === mod.id)
+        if (el) { el.currentTime = 0; el.play().catch(() => {}) }
+      }
+    }
+    prevTimerFinished[mod.id] = nowFinished
+  }
+}
+
+function timerContainerStyle(mod) {
+  const t = mod?.transform ?? {}
+  const bg = brandBackground(mod)
   return {
     position: 'absolute',
     left: '0px',
     top: '0px',
-    transform: `translate(${mod?.bar?.x ?? 0}px, ${mod?.bar?.y ?? 0}px)`,
+    transform: `translate(${t.x ?? 0}px, ${t.y ?? 0}px) scale(${t.scaleX ?? 1}, ${t.scaleY ?? 1})`,
+    transformOrigin: 'left top',
+    opacity: brandOpacity(mod),
+    background: bg.backgroundAlpha > 0 ? rgbaFromHex(bg.backgroundColor, bg.backgroundAlpha) : 'rgba(0,0,0,0.7)',
+    borderRadius: '8px',
+    border: bg.borderAlpha > 0 ? `1px solid ${rgbaFromHex(bg.borderColor, bg.borderAlpha)}` : 'none',
+    padding: '0.6rem 1.2rem',
+    textAlign: 'center',
+    minWidth: '180px',
+    pointerEvents: 'none',
+  }
+}
+
+function timerTimeStyle(mod) {
+  return {
+    color: brandColor(mod, 'text'),
+    fontSize: `${mod.transform?.fontSize ?? 48}px`,
+    fontFamily: '"Courier New", Courier, monospace',
+    fontVariantNumeric: 'tabular-nums',
+    lineHeight: 1.1,
+    textShadow: '0 2px 8px rgba(0,0,0,0.6)',
+  }
+}
+
+function chatContainerStyle(mod) {
+  const t = mod?.transform ?? {}
+  const bg = brandBackground(mod)
+  const fontSize = mod.fontSize ?? 18
+  return {
+    position: 'absolute',
+    left: '0px',
+    top: '0px',
+    transform: `translate(${t.x ?? 0}px, ${t.y ?? 0}px) scale(${t.scaleX ?? 1}, ${t.scaleY ?? 1})`,
+    transformOrigin: 'left top',
+    opacity: brandOpacity(mod),
+    background: bg.backgroundAlpha > 0 ? rgbaFromHex(bg.backgroundColor, bg.backgroundAlpha) : 'rgba(0,0,0,0.6)',
+    borderRadius: '8px',
+    border: bg.borderAlpha > 0 ? `1px solid ${rgbaFromHex(bg.borderColor, bg.borderAlpha)}` : 'none',
+    padding: '0.5rem 0.8rem',
+    minWidth: '300px',
+    maxWidth: '600px',
+    maxHeight: '400px',
+    overflow: 'hidden',
+    display: 'flex',
+    flexDirection: 'column-reverse',
+    fontFamily: 'sans-serif',
+    fontSize: `${fontSize}px`,
+    lineHeight: 1.4,
+    pointerEvents: 'none',
+  }
+}
+
+function formatChatTimestamp(ts) {
+  if (!ts) return ''
+  const d = new Date(ts)
+  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+}
+
+function chatRowCls(mod) {
+  const ml = mod.maxLines
+  if (ml === 0) return 'chat-row-nowrap'
+  if (ml === -1) return 'chat-row-wrap'
+  if (ml > 0) return 'chat-row-clamp'
+  return ''
+}
+
+function chatTextStyle(mod) {
+  const ml = mod.maxLines
+  const base = { color: mod.messageColor }
+  if (ml > 0) {
+    base['overflow'] = 'hidden'
+    base['display'] = '-webkit-box'
+    base['WebkitBoxOrient'] = 'vertical'
+    base['WebkitLineClamp'] = ml
+    base['wordBreak'] = 'break-word'
+  }
+  return base
+}
+
+function progressContainerStyle(mod) {
+  const t = mod?.transform ?? {}
+  const bg = brandBackground(mod)
+  return {
+    position: 'absolute',
+    left: '0px',
+    top: '0px',
+    transform: `translate(${t.x ?? 0}px, ${t.y ?? 0}px)`,
+    transformOrigin: 'left top',
+    opacity: brandOpacity(mod),
+    ...(bg.backgroundAlpha > 0 ? {
+      background: rgbaFromHex(bg.backgroundColor, bg.backgroundAlpha),
+      borderRadius: '12px',
+      border: bg.borderAlpha > 0 ? `1px solid ${rgbaFromHex(bg.borderColor, bg.borderAlpha)}` : 'none',
+    } : {}),
   }
 }
 
 function trackStyle(bar) {
   return {
-    transform: `scale(${bar?.scaleX ?? 1}, ${bar?.scaleY ?? 1})`,
+    transform: `translate(${bar?.x ?? 0}px, ${bar?.y ?? 0}px) scale(${bar?.scaleX ?? 1}, ${bar?.scaleY ?? 1})`,
     transformOrigin: 'left top',
   }
 }
 
-function textStyle(t) {
+function textStyle(t, bar = {}) {
   return {
-    transform: `translate(${t?.x ?? 0}px, ${t?.y ?? 0}px)`,
+    transform: `translate(${(t?.x ?? 0) + (bar?.x ?? 0)}px, ${(t?.y ?? 0) + (bar?.y ?? 0)}px)`,
     fontSize: `${t?.fontSize ?? 16}px`,
   }
 }
 
 function imageStyle(mod) {
   const tr = mod?.transform ?? {}
+  const bg = brandBackground(mod)
   return {
     position: 'absolute',
     left: '0px',
     top: '0px',
     transform: `translate(${tr.x ?? 0}px, ${tr.y ?? 0}px) scale(${tr.scaleX ?? 1}, ${tr.scaleY ?? 1})`,
     transformOrigin: 'left top',
-    opacity: `${mod?.opacity ?? 1}`,
+    opacity: `${brandOpacity(mod)}`,
     maxWidth: 'none',
     pointerEvents: 'none',
+    ...(bg.backgroundAlpha > 0 ? {
+      background: rgbaFromHex(bg.backgroundColor, bg.backgroundAlpha),
+      borderRadius: '12px',
+      border: bg.borderAlpha > 0 ? `1px solid ${rgbaFromHex(bg.borderColor, bg.borderAlpha)}` : 'none',
+    } : {}),
   }
 }
 
 function textModuleStyle(mod) {
   const tr = mod?.transform ?? {}
+  const bg = brandBackground(mod)
   return {
     position: 'absolute',
     left: '0px',
@@ -246,9 +565,16 @@ function textModuleStyle(mod) {
     transform: `translate(${tr.x ?? 0}px, ${tr.y ?? 0}px) scale(${tr.scaleX ?? 1}, ${tr.scaleY ?? 1})`,
     transformOrigin: 'left top',
     fontSize: `${tr.fontSize ?? 32}px`,
-    color: mod?.color ?? '#ffffff',
+    color: brandColor(mod, 'text'),
+    opacity: brandOpacity(mod),
     whiteSpace: 'pre-wrap',
     textShadow: '0 1px 4px rgba(0,0,0,0.7)',
+    ...(bg.backgroundAlpha > 0 ? {
+      background: rgbaFromHex(bg.backgroundColor, bg.backgroundAlpha),
+      borderRadius: '12px',
+      padding: '0.3rem 0.5rem',
+      border: bg.borderAlpha > 0 ? `1px solid ${rgbaFromHex(bg.borderColor, bg.borderAlpha)}` : 'none',
+    } : {}),
   }
 }
 
@@ -278,14 +604,10 @@ function leaderboardTextOutline(source) {
 }
 
 function leaderboardStyle(mod) {
-  const appearance = leaderboardAppearance(mod)
-  const bg = parseHexColor(appearance.backgroundColor)
-  const br = parseHexColor(appearance.borderColor)
-  const bgAlpha = (appearance.backgroundAlpha / 255).toFixed(3)
-  const brAlpha = (appearance.borderAlpha / 255).toFixed(3)
+  const bg = brandBackground(mod)
   return {
-    background: bg ? `rgba(${bg.r}, ${bg.g}, ${bg.b}, ${bgAlpha})` : 'transparent',
-    border: br ? `1px solid rgba(${br.r}, ${br.g}, ${br.b}, ${brAlpha})` : 'none',
+    background: bg.backgroundAlpha > 0 ? rgbaFromHex(bg.backgroundColor, bg.backgroundAlpha) : 'transparent',
+    border: bg.borderAlpha > 0 ? `1px solid ${rgbaFromHex(bg.borderColor, bg.borderAlpha)}` : 'none',
   }
 }
 
@@ -302,26 +624,11 @@ function leaderboardAppearance(mod) {
     : []
 
   const srcAutoHide = source.autoHide && typeof source.autoHide === 'object' ? source.autoHide : {}
-  const srcAnimation = srcAutoHide.animation && typeof srcAutoHide.animation === 'object' ? srcAutoHide.animation : {}
   const autoHide = {
     enabled: srcAutoHide.enabled === true,
     hideDelaySec: typeof srcAutoHide.hideDelaySec === 'number' && srcAutoHide.hideDelaySec >= 0 ? srcAutoHide.hideDelaySec : 30,
     periodicShowSec: typeof srcAutoHide.periodicShowSec === 'number' && srcAutoHide.periodicShowSec >= 0 ? srcAutoHide.periodicShowSec : 5,
     periodicIntervalSec: typeof srcAutoHide.periodicIntervalSec === 'number' && srcAutoHide.periodicIntervalSec >= 0 ? srcAutoHide.periodicIntervalSec : 60,
-    animation: {
-      transitionDurationSec: typeof srcAnimation.transitionDurationSec === 'number' && srcAnimation.transitionDurationSec >= 0
-        ? srcAnimation.transitionDurationSec
-        : 0.35,
-      motionDirection: ['none', 'up', 'down', 'left', 'right'].includes(srcAnimation.motionDirection)
-        ? srcAnimation.motionDirection
-        : 'down',
-      motionDistancePx: typeof srcAnimation.motionDistancePx === 'number' && srcAnimation.motionDistancePx >= 0
-        ? srcAnimation.motionDistancePx
-        : 14,
-      motionInterpolation: ['linear', 'quadratic', 'exponential'].includes(srcAnimation.motionInterpolation)
-        ? srcAnimation.motionInterpolation
-        : 'linear',
-    },
   }
 
   return {
@@ -334,10 +641,9 @@ function leaderboardAppearance(mod) {
     numberColorKeys,
     focusHighlightColor: typeof source.focusHighlightColor === 'string' && /^#[0-9a-f]{6}$/i.test(source.focusHighlightColor) ? source.focusHighlightColor : '#82b1ff',
     focusHighlightAlpha: Number.isFinite(Number(source.focusHighlightAlpha)) && Number(source.focusHighlightAlpha) >= 0 && Number(source.focusHighlightAlpha) <= 255 ? Math.round(Number(source.focusHighlightAlpha)) : 255,
-    backgroundColor: typeof source.backgroundColor === 'string' && /^#[0-9a-f]{6}$/i.test(source.backgroundColor) ? source.backgroundColor : '#000000',
-    backgroundAlpha: Number.isFinite(Number(source.backgroundAlpha)) && Number(source.backgroundAlpha) >= 0 && Number(source.backgroundAlpha) <= 255 ? Math.round(Number(source.backgroundAlpha)) : 199,
-    borderColor: typeof source.borderColor === 'string' && /^#[0-9a-f]{6}$/i.test(source.borderColor) ? source.borderColor : '#ffffff',
-    borderAlpha: Number.isFinite(Number(source.borderAlpha)) && Number(source.borderAlpha) >= 0 && Number(source.borderAlpha) <= 255 ? Math.round(Number(source.borderAlpha)) : 36,
+    bestHighlightColor: typeof source.bestHighlightColor === 'string' && /^#[0-9a-f]{6}$/i.test(source.bestHighlightColor) ? source.bestHighlightColor : '#ffd700',
+    goodHighlightColor: typeof source.goodHighlightColor === 'string' && /^#[0-9a-f]{6}$/i.test(source.goodHighlightColor) ? source.goodHighlightColor : '#4caf50',
+    badHighlightColor: typeof source.badHighlightColor === 'string' && /^#[0-9a-f]{6}$/i.test(source.badHighlightColor) ? source.badHighlightColor : '#f44336',
     backgroundImage: leaderboardArt(source.backgroundImage),
     titleOutline: leaderboardTextOutline(source.titleOutline),
     participantOutline: leaderboardTextOutline(source.participantOutline),
@@ -366,26 +672,27 @@ function leaderboardArtworkStyle(source) {
 
 function leaderboardShellStyle(mod) {
   const tr = mod?.transform ?? {}
-  const animation = leaderboardAppearance(mod).autoHide.animation
-  const vector = motionVector(animation.motionDirection)
+  const anim = brandAnimation(mod)
+  const vector = motionVector(anim.motionDirection ?? 'none')
   return {
     position: 'absolute',
     left: '0px',
     top: '0px',
     transformOrigin: 'left top',
+    opacity: brandOpacity(mod),
     '--leaderboard-base-x': `${tr.x ?? 0}px`,
     '--leaderboard-base-y': `${tr.y ?? 0}px`,
     '--leaderboard-scale-x': `${tr.scaleX ?? 1}`,
     '--leaderboard-scale-y': `${tr.scaleY ?? 1}`,
-    '--leaderboard-motion-x': `${vector.x * animation.motionDistancePx}px`,
-    '--leaderboard-motion-y': `${vector.y * animation.motionDistancePx}px`,
-    '--leaderboard-transition-duration': `${animation.transitionDurationSec}s`,
-    '--leaderboard-motion-ease': interpolationCurve(animation.motionInterpolation),
+    '--leaderboard-motion-x': `${vector.x * (anim.motionDistancePx ?? 14)}px`,
+    '--leaderboard-motion-y': `${vector.y * (anim.motionDistancePx ?? 14)}px`,
+    '--leaderboard-transition-duration': `${anim.transitionDurationSec ?? 0.35}s`,
+    '--leaderboard-motion-ease': interpolationCurve(anim.motionInterpolation ?? 'linear'),
   }
 }
 
 function leaderboardHeaderStyle(mod) {
-  const appearance = leaderboardAppearance(mod)
+  const appearance = brandLeaderboardAppearance(mod)
   return {
     color: appearance.textColor,
     ...leaderboardOutlineStyle(appearance.titleOutline),
@@ -402,6 +709,12 @@ function parseHexColor(hex) {
   }
 }
 
+function rgbaFromHex(hex, alpha) {
+  const parsed = parseHexColor(hex)
+  if (!parsed) return 'transparent'
+  return `rgba(${parsed.r}, ${parsed.g}, ${parsed.b}, ${(Math.max(0, Math.min(255, alpha ?? 0)) / 255).toFixed(3)})`
+}
+
 function lerpHexColor(a, b, t, fallback = '#82b1ff') {
   const left = parseHexColor(a)
   const right = parseHexColor(b)
@@ -410,8 +723,52 @@ function lerpHexColor(a, b, t, fallback = '#82b1ff') {
   return `#${lerp(left.r, right.r)}${lerp(left.g, right.g)}${lerp(left.b, right.b)}`
 }
 
+function hasBrandOverride(mod, path) {
+  return Array.isArray(mod?.brandOverrides) && mod.brandOverrides.includes(path)
+}
+
+function brandBackground(mod) {
+  if (!hasBrandOverride(mod, 'background')) return brand.value?.background ?? {}
+  return mod?.background ?? {}
+}
+
+function brandOpacity(mod) {
+  if (!hasBrandOverride(mod, 'opacity')) return brand.value?.opacity ?? 1
+  return mod?.opacity ?? 1
+}
+
+function brandAnimation(mod) {
+  if (!hasBrandOverride(mod, 'animation')) return brand.value?.animation ?? {}
+  return mod?.animation ?? {}
+}
+
+function brandColor(mod, type) {
+  if (!hasBrandOverride(mod, 'color')) {
+    const b = brand.value
+    if (type === 'text') return b?.textColor ?? '#ffffff'
+    return b?.highlightColor ?? '#82b1ff' // progressBar fallback
+  }
+  return mod?.color ?? '#ffffff'
+}
+
+function brandLeaderboardAppearance(mod) {
+  const fallback = leaderboardAppearance(mod)
+  if (!brand.value) return fallback
+  const b = brand.value
+  return {
+    ...fallback,
+    textColor: !hasBrandOverride(mod, 'appearance.textColor') ? b.textColor : fallback.textColor,
+    defaultUsernameColor: !hasBrandOverride(mod, 'appearance.defaultUsernameColor') ? b.defaultUsernameColor : fallback.defaultUsernameColor,
+    focusHighlightColor: !hasBrandOverride(mod, 'appearance.focusHighlightColor') ? b.highlightColor : fallback.focusHighlightColor,
+    bestHighlightColor: !hasBrandOverride(mod, 'appearance.bestHighlightColor') ? b.bestHighlightColor : fallback.bestHighlightColor,
+    goodHighlightColor: !hasBrandOverride(mod, 'appearance.goodHighlightColor') ? b.goodHighlightColor : fallback.goodHighlightColor,
+    badHighlightColor: !hasBrandOverride(mod, 'appearance.badHighlightColor') ? b.badHighlightColor : fallback.badHighlightColor,
+    numberColor: !hasBrandOverride(mod, 'appearance.numberColor') ? b.numberColor : fallback.numberColor,
+  }
+}
+
 function leaderboardNumberColor(mod, row) {
-  const appearance = leaderboardAppearance(mod)
+  const appearance = brandLeaderboardAppearance(mod)
   if (appearance.numberColorMode !== 'gradient') return appearance.numberColor
   const keys = appearance.numberColorKeys
   if (keys.length === 0) return appearance.numberColor
@@ -431,21 +788,34 @@ function leaderboardNumberColor(mod, row) {
 }
 
 function leaderboardRowStyle(mod, row) {
-  const appearance = leaderboardAppearance(mod)
+  const appearance = brandLeaderboardAppearance(mod)
   const focus = row.id === mod.focusParticipantId
-  if (!focus) return { color: appearance.textColor }
-  const color = parseHexColor(appearance.focusHighlightColor)
-  if (!color) return { color: appearance.textColor }
-  const alpha = appearance.focusHighlightAlpha / 255
+  if (focus) {
+    const color = parseHexColor(appearance.focusHighlightColor)
+    if (!color) return { color: appearance.textColor }
+    const alpha = appearance.focusHighlightAlpha / 255
+    return {
+      color: appearance.textColor,
+      background: `rgba(${color.r}, ${color.g}, ${color.b}, ${(alpha * 0.2).toFixed(3)})`,
+      border: `1px solid rgba(${color.r}, ${color.g}, ${color.b}, ${(alpha * 0.55).toFixed(3)})`,
+    }
+  }
+  const accentKey = row.status === 'best' ? 'bestHighlightColor'
+    : row.status === 'ahead' ? 'goodHighlightColor'
+    : row.status === 'behind' ? 'badHighlightColor'
+    : null
+  if (!accentKey) return { color: appearance.textColor }
+  const accentColor = parseHexColor(appearance[accentKey])
+  if (!accentColor) return { color: appearance.textColor }
   return {
     color: appearance.textColor,
-    background: `rgba(${color.r}, ${color.g}, ${color.b}, ${(alpha * 0.2).toFixed(3)})`,
-    border: `1px solid rgba(${color.r}, ${color.g}, ${color.b}, ${(alpha * 0.55).toFixed(3)})`,
+    borderLeft: `3px solid rgba(${accentColor.r}, ${accentColor.g}, ${accentColor.b}, 0.8)`,
+    paddingLeft: 'calc(0.5rem - 3px)',
   }
 }
 
 function leaderboardUsernameStyle(mod, row) {
-  const appearance = leaderboardAppearance(mod)
+  const appearance = brandLeaderboardAppearance(mod)
   return {
     color: appearance.usernameColors[row.id] ?? appearance.defaultUsernameColor,
     ...leaderboardOutlineStyle(appearance.participantOutline),
@@ -453,7 +823,7 @@ function leaderboardUsernameStyle(mod, row) {
 }
 
 function leaderboardNumberStyle(mod, row) {
-  const appearance = leaderboardAppearance(mod)
+  const appearance = brandLeaderboardAppearance(mod)
   return {
     color: leaderboardNumberColor(mod, row),
     ...leaderboardOutlineStyle(appearance.scoreOutline),
@@ -553,10 +923,22 @@ function visibleLeaderboardRows(mod) {
   const dividerIndex = focusStart > topEnd
     ? orderedIndexes.find(index => index >= focusStart)
     : null
-  return orderedIndexes.map(index => ({
-    ...sorted[index],
-    showDivider: dividerIndex != null && index === dividerIndex,
-  }))
+  return orderedIndexes.map(index => {
+    const participant = sorted[index]
+    let status
+    if (participant.id === mod?.focusParticipantId) {
+      status = 'focus'
+    } else if (index < focusIndex) {
+      status = participant.rank === 1 ? 'best' : 'ahead'
+    } else {
+      status = 'behind'
+    }
+    return {
+      ...participant,
+      showDivider: dividerIndex != null && index === dividerIndex,
+      status,
+    }
+  })
 }
 
 function formatLeaderboardScore(rawScore, scoreType) {
@@ -769,9 +1151,17 @@ onMounted(() => {
         if (mod.type === 'leaderboard') onLeaderboardModuleUpdate(mod)
       }
       modules.value = data.modules
+      refreshTimerDisplays()
+      checkTimerFinishedSound(data.modules)
     }
     normalizePopupConfig(data?.nowPlayingPopup)
     if (data?.music) syncMusic(data.music)
+    if (data?.brand) brand.value = data.brand
+    if (data?.chatMessages) {
+      for (const [modId, msgs] of Object.entries(data.chatMessages)) {
+        chatMessagesByMod[modId] = msgs
+      }
+    }
   }
   source.onerror = (event) => {
     console.warn('[overlay] SSE connection lost, will retry automatically.', event)
@@ -779,6 +1169,13 @@ onMounted(() => {
 
   progressTimer = setInterval(refreshMusicProgress, PROGRESS_UPDATE_INTERVAL_MS)
   audioRef.value?.addEventListener('ended', skipAfterTrackEnded)
+
+  // Timer update interval
+  refreshTimerDisplays()
+  overlayTimerInterval = setInterval(() => {
+    refreshTimerDisplays()
+    checkTimerFinishedSound(modules.value)
+  }, 53)
 })
 
 onUnmounted(() => {
@@ -788,6 +1185,7 @@ onUnmounted(() => {
   if (popupHideTimer) clearTimeout(popupHideTimer)
   if (popupEndTimer) clearTimeout(popupEndTimer)
   if (popupPeriodicTimer) clearInterval(popupPeriodicTimer)
+  if (overlayTimerInterval) clearInterval(overlayTimerInterval)
   for (const modId of Object.keys(leaderboardHideTimers)) clearTimeout(leaderboardHideTimers[modId])
   for (const modId of Object.keys(leaderboardPeriodicTimers)) clearInterval(leaderboardPeriodicTimers[modId])
 })
@@ -1076,5 +1474,130 @@ onUnmounted(() => {
     calc(var(--popup-base-x, 0px) + var(--popup-motion-x, 0px)),
     calc(var(--popup-base-y, 0px) + var(--popup-motion-y, 0px))
   );
+}
+
+.timer-module {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(4px);
+}
+
+.timer-module.timer-finished {
+  animation: timerPulse 1s ease-in-out infinite;
+}
+
+@keyframes timerPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.timer-time {
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.timer-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.75);
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
+  margin-top: 0.2rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.chat-messages {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  overflow: hidden;
+}
+
+.chat-message-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.2rem;
+}
+
+.chat-row-nowrap {
+  white-space: nowrap;
+}
+
+.chat-row-wrap {
+  white-space: normal;
+}
+
+.chat-row-clamp {
+  white-space: normal;
+  overflow: hidden;
+}
+
+.chat-prefix {
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 0.8em;
+  font-weight: 600;
+  margin-right: 0.15rem;
+}
+
+.chat-badges {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+  margin-right: 0.15rem;
+}
+
+.chat-badge {
+  width: 1.3em;
+  height: 1.3em;
+  display: inline-block;
+  vertical-align: middle;
+}
+
+.chat-username {
+  font-weight: 700;
+}
+
+.chat-colon {
+  color: rgba(255, 255, 255, 0.5);
+  margin-right: 0.15rem;
+}
+
+.chat-message-text {
+  min-width: 0;
+}
+
+.chat-timestamp {
+  font-size: 0.75em;
+  color: rgba(255, 255, 255, 0.35);
+  margin-left: 0.4rem;
+}
+
+.chat-emote {
+  display: inline-block;
+  width: 1.5em;
+  height: 1.5em;
+  vertical-align: middle;
+}
+
+.chat-message-enter-active,
+.chat-message-leave-active {
+  transition: all 0.5s ease;
+}
+
+.chat-message-enter-from {
+  opacity: 0;
+  transform: translateX(-10px);
+}
+
+.chat-message-leave-to {
+  opacity: 0;
+  transform: translateX(20px);
+}
+
+.chat-message-move {
+  transition: transform 0.5s ease;
 }
 </style>

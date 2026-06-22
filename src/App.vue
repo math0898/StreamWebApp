@@ -1,6 +1,7 @@
 <template>
   <nav v-if="showNav" class="top-nav">
     <RouterLink to="/dashboard" class="nav-link">Dashboard</RouterLink>
+    <RouterLink to="/mdashboard" class="nav-link">Mobile</RouterLink>
     <RouterLink to="/modules" class="nav-link">Modules</RouterLink>
     <RouterLink to="/music" class="nav-link">Music</RouterLink>
     <RouterLink to="/settings" class="nav-link">Settings</RouterLink>

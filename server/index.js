@@ -8,17 +8,20 @@ import { homedir } from 'os'
 import {
   MODULE_TYPES,
   FACTORY_MODULE_DEFAULTS,
-  DEFAULT_BAR,
+  DEFAULT_TRANSFORM,
   DEFAULT_TITLE,
   DEFAULT_VALUE,
-  DEFAULT_IMAGE_TRANSFORM,
   DEFAULT_TEXT_TRANSFORM,
-  DEFAULT_LEADERBOARD_TRANSFORM,
+  DEFAULT_BACKGROUND,
+  DEFAULT_ANIMATION,
+  DEFAULT_BRAND,
+  sanitizeBrand,
   mergeModule as mergeOverlayModule,
   newModule as createModule,
   patchModule as patchOverlayModule,
 } from './module-models.js'
 import { selectNextTrack, computeMoodVector, scoreCandidateTrack } from './dj-selector.js'
+import { chatManager } from './chat-connector.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const DATA_FILE = join(__dirname, 'data.json')
@@ -169,6 +172,13 @@ function patchProgressBar(target, patch) {
       if (typeof fontSize === 'number' && fontSize > 0) target[key].fontSize = fontSize
     }
   }
+
+  if (patch.background && typeof patch.background === 'object') {
+    target.background = { ...DEFAULT_BACKGROUND, ...target.background, ...patch.background }
+  }
+  if (patch.animation && typeof patch.animation === 'object') {
+    target.animation = { ...DEFAULT_ANIMATION, ...target.animation, ...patch.animation }
+  }
 }
 
 function patchImage(target, patch) {
@@ -184,6 +194,13 @@ function patchImage(target, patch) {
     if (typeof scaleX === 'number') target.transform.scaleX = scaleX
     if (typeof scaleY === 'number') target.transform.scaleY = scaleY
   }
+
+  if (patch.background && typeof patch.background === 'object') {
+    target.background = { ...DEFAULT_BACKGROUND, ...target.background, ...patch.background }
+  }
+  if (patch.animation && typeof patch.animation === 'object') {
+    target.animation = { ...DEFAULT_ANIMATION, ...target.animation, ...patch.animation }
+  }
 }
 
 function patchText(target, patch) {
@@ -198,6 +215,13 @@ function patchText(target, patch) {
     if (typeof scaleX === 'number') target.transform.scaleX = scaleX
     if (typeof scaleY === 'number') target.transform.scaleY = scaleY
     if (typeof fontSize === 'number' && fontSize > 0) target.transform.fontSize = fontSize
+  }
+
+  if (patch.background && typeof patch.background === 'object') {
+    target.background = { ...DEFAULT_BACKGROUND, ...target.background, ...patch.background }
+  }
+  if (patch.animation && typeof patch.animation === 'object') {
+    target.animation = { ...DEFAULT_ANIMATION, ...target.animation, ...patch.animation }
   }
 }
 
@@ -259,6 +283,13 @@ function patchLeaderboard(target, patch) {
     if (typeof scaleY === 'number') target.transform.scaleY = scaleY
   }
 
+  if (patch.background && typeof patch.background === 'object') {
+    target.background = { ...DEFAULT_BACKGROUND, ...target.background, ...patch.background }
+  }
+  if (patch.animation && typeof patch.animation === 'object') {
+    target.animation = { ...DEFAULT_ANIMATION, ...target.animation, ...patch.animation }
+  }
+
   if (Array.isArray(patch.participants)) {
     target.participants = patch.participants
       .filter(participant => participant && typeof participant === 'object')
@@ -274,17 +305,64 @@ function patchLeaderboard(target, patch) {
   }
 
   if (patch.appearance && typeof patch.appearance === 'object') {
+    const incoming = { ...patch.appearance }
+    if (incoming.backgroundColor || incoming.backgroundAlpha || incoming.borderColor || incoming.borderAlpha) {
+      target.background = { ...DEFAULT_BACKGROUND, ...target.background, ...incoming }
+    }
+    if (incoming.autoHide?.animation) {
+      target.animation = { ...DEFAULT_ANIMATION, ...target.animation, ...incoming.autoHide.animation }
+    }
+    delete incoming.backgroundColor
+    delete incoming.backgroundAlpha
+    delete incoming.borderColor
+    delete incoming.borderAlpha
+    if (incoming.autoHide) {
+      incoming.autoHide = { ...incoming.autoHide }
+      delete incoming.autoHide.animation
+    }
+
     const merged = {
       ...(target.appearance ?? FACTORY_MODULE_DEFAULTS.leaderboard.appearance),
-      ...patch.appearance,
-      usernameColors: patch.appearance.usernameColors && typeof patch.appearance.usernameColors === 'object' && !Array.isArray(patch.appearance.usernameColors)
-        ? { ...((target.appearance?.usernameColors ?? {})), ...patch.appearance.usernameColors }
+      ...incoming,
+      usernameColors: incoming.usernameColors && typeof incoming.usernameColors === 'object' && !Array.isArray(incoming.usernameColors)
+        ? { ...((target.appearance?.usernameColors ?? {})), ...incoming.usernameColors }
         : (target.appearance?.usernameColors ?? {}),
-      numberColorKeys: Array.isArray(patch.appearance.numberColorKeys)
-        ? patch.appearance.numberColorKeys
+      numberColorKeys: Array.isArray(incoming.numberColorKeys)
+        ? incoming.numberColorKeys
         : (target.appearance?.numberColorKeys ?? []),
     }
     target.appearance = sanitizeLeaderboardAppearance(merged, FACTORY_MODULE_DEFAULTS.leaderboard.appearance)
+  }
+}
+
+function patchTimer(target, patch) {
+  if (typeof patch.name === 'string') target.name = patch.name
+  if (patch.mode === 'countdown' || patch.mode === 'countup') target.mode = patch.mode
+  if (['millis', 'hundredths', 'tenths', 'seconds', 'minutes'].includes(patch.precision)) target.precision = patch.precision
+  if (patch.targetType === 'duration' || patch.targetType === 'datetime') target.targetType = patch.targetType
+  if (typeof patch.duration === 'number' && patch.duration > 0) target.duration = patch.duration
+  if (typeof patch.targetDateTime === 'string') target.targetDateTime = patch.targetDateTime
+  if (typeof patch.maxDuration === 'number' && patch.maxDuration >= 0) target.maxDuration = patch.maxDuration
+  if (['auto', 'hours', 'minutes', 'seconds'].includes(patch.maxUnit)) target.maxUnit = patch.maxUnit
+  if (typeof patch.color === 'string') target.color = patch.color
+
+  if (patch.transform && typeof patch.transform === 'object') {
+    const { x, y, scaleX, scaleY } = patch.transform
+    if (typeof x === 'number') target.transform.x = x
+    if (typeof y === 'number') target.transform.y = y
+    if (typeof scaleX === 'number') target.transform.scaleX = scaleX
+    if (typeof scaleY === 'number') target.transform.scaleY = scaleY
+  }
+
+  if (typeof patch.opacity === 'number' && patch.opacity >= 0 && patch.opacity <= 1) target.opacity = patch.opacity
+  if (patch.background && typeof patch.background === 'object') {
+    target.background = { ...DEFAULT_BACKGROUND, ...target.background, ...patch.background }
+  }
+  if (patch.animation && typeof patch.animation === 'object') {
+    target.animation = { ...DEFAULT_ANIMATION, ...target.animation, ...patch.animation }
+  }
+  if (patch.onComplete && typeof patch.onComplete === 'object') {
+    target.onComplete = { ...target.onComplete, ...patch.onComplete }
   }
 }
 
@@ -370,31 +448,52 @@ function patchNowPlayingPopup(target, patch) {
   }
 }
 
+function cleanLegacyAppearance(raw) {
+  if (!raw || typeof raw !== 'object') return raw
+  const cleaned = { ...raw }
+  delete cleaned.backgroundColor
+  delete cleaned.backgroundAlpha
+  delete cleaned.borderColor
+  delete cleaned.borderAlpha
+  if (cleaned.autoHide && typeof cleaned.autoHide === 'object') {
+    cleaned.autoHide = { ...cleaned.autoHide }
+    delete cleaned.autoHide.animation
+  }
+  return cleaned
+}
+
 function mergeModuleDefaults(saved) {
   const p = saved?.progressBar ?? {}
   const i = saved?.image ?? {}
   const t = saved?.text ?? {}
   const l = saved?.leaderboard ?? {}
+  const c = saved?.chat ?? {}
 
   return {
     progressBar: {
       label: typeof p.label === 'string' ? p.label : FACTORY_MODULE_DEFAULTS.progressBar.label,
       max:   typeof p.max === 'number' && p.max > 0 ? p.max : FACTORY_MODULE_DEFAULTS.progressBar.max,
       color: typeof p.color === 'string' ? p.color : FACTORY_MODULE_DEFAULTS.progressBar.color,
-      bar:   { ...DEFAULT_BAR,   ...(p.bar   ?? {}) },
-      title: { ...DEFAULT_TITLE, ...(p.title ?? {}) },
-      value: { ...DEFAULT_VALUE, ...(p.value ?? {}) },
+      bar:   { ...DEFAULT_TRANSFORM, ...(p.bar   ?? {}) },
+      title: { ...DEFAULT_TITLE,     ...(p.title ?? {}) },
+      value: { ...DEFAULT_VALUE,     ...(p.value ?? {}) },
+      background: { ...DEFAULT_BACKGROUND, ...(p.background ?? {}) },
+      animation:  { ...DEFAULT_ANIMATION,  ...(p.animation  ?? {}) },
     },
     image: {
       src:       typeof i.src === 'string' && i.src.trim() ? i.src : FACTORY_MODULE_DEFAULTS.image.src,
       alt:       typeof i.alt === 'string' ? i.alt : FACTORY_MODULE_DEFAULTS.image.alt,
       opacity:   typeof i.opacity === 'number' ? i.opacity : FACTORY_MODULE_DEFAULTS.image.opacity,
-      transform: { ...DEFAULT_IMAGE_TRANSFORM, ...(i.transform ?? {}) },
+      transform: { ...DEFAULT_TRANSFORM, ...(i.transform ?? {}) },
+      background: { ...DEFAULT_BACKGROUND, ...(i.background ?? {}) },
+      animation:  { ...DEFAULT_ANIMATION,  ...(i.animation  ?? {}) },
     },
     text: {
       text:      typeof t.text === 'string' ? t.text : FACTORY_MODULE_DEFAULTS.text.text,
       color:     typeof t.color === 'string' ? t.color : FACTORY_MODULE_DEFAULTS.text.color,
       transform: { ...DEFAULT_TEXT_TRANSFORM, ...(t.transform ?? {}) },
+      background: { ...DEFAULT_BACKGROUND, ...(t.background ?? {}) },
+      animation:  { ...DEFAULT_ANIMATION,  ...(t.animation  ?? {}) },
     },
     leaderboard: {
       name: typeof l.name === 'string' && l.name.trim() ? l.name.trim() : FACTORY_MODULE_DEFAULTS.leaderboard.name,
@@ -403,8 +502,10 @@ function mergeModuleDefaults(saved) {
       neighborCount: typeof l.neighborCount === 'number' && l.neighborCount >= 0
         ? Math.floor(l.neighborCount)
         : FACTORY_MODULE_DEFAULTS.leaderboard.neighborCount,
-      transform: { ...DEFAULT_LEADERBOARD_TRANSFORM, ...(l.transform ?? {}) },
-      appearance: sanitizeLeaderboardAppearance(l.appearance, FACTORY_MODULE_DEFAULTS.leaderboard.appearance),
+      transform: { ...DEFAULT_TRANSFORM, ...(l.transform ?? {}) },
+      background: { ...FACTORY_MODULE_DEFAULTS.leaderboard.background, ...(l.background ?? {}) },
+      animation:  { ...FACTORY_MODULE_DEFAULTS.leaderboard.animation,  ...(l.animation  ?? {}) },
+      appearance: sanitizeLeaderboardAppearance(cleanLegacyAppearance(l.appearance), FACTORY_MODULE_DEFAULTS.leaderboard.appearance),
       focusParticipantId: typeof l.focusParticipantId === 'string' ? l.focusParticipantId : FACTORY_MODULE_DEFAULTS.leaderboard.focusParticipantId,
       participants: Array.isArray(l.participants) && l.participants.length > 0
         ? l.participants
@@ -419,6 +520,31 @@ function mergeModuleDefaults(saved) {
             score: typeof participant.score === 'number' && Number.isFinite(participant.score) ? participant.score : 0,
           }))
         : FACTORY_MODULE_DEFAULTS.leaderboard.participants.map(participant => ({ ...participant })),
+    },
+    chat: {
+      platform: typeof c.platform === 'string' && ['twitch', 'youtube'].includes(c.platform)
+        ? c.platform : FACTORY_MODULE_DEFAULTS.chat.platform,
+      channel: typeof c.channel === 'string' ? c.channel : FACTORY_MODULE_DEFAULTS.chat.channel,
+      clientId: typeof c.clientId === 'string' ? c.clientId : FACTORY_MODULE_DEFAULTS.chat.clientId,
+      accessToken: typeof c.accessToken === 'string' ? c.accessToken : FACTORY_MODULE_DEFAULTS.chat.accessToken,
+      messageLimit: typeof c.messageLimit === 'number' && c.messageLimit >= 1
+        ? Math.floor(c.messageLimit) : FACTORY_MODULE_DEFAULTS.chat.messageLimit,
+      fadeOutSec: typeof c.fadeOutSec === 'number' && c.fadeOutSec >= 0
+        ? c.fadeOutSec : FACTORY_MODULE_DEFAULTS.chat.fadeOutSec,
+      showBadges: c.showBadges !== false,
+      showTimestamps: c.showTimestamps === true,
+      fontSize: typeof c.fontSize === 'number' && c.fontSize > 0
+        ? c.fontSize : FACTORY_MODULE_DEFAULTS.chat.fontSize,
+      usernameColor: typeof c.usernameColor === 'string' ? c.usernameColor : FACTORY_MODULE_DEFAULTS.chat.usernameColor,
+      messageColor: typeof c.messageColor === 'string' ? c.messageColor : FACTORY_MODULE_DEFAULTS.chat.messageColor,
+      prefix: typeof c.prefix === 'string' ? c.prefix.trim() : FACTORY_MODULE_DEFAULTS.chat.prefix,
+      maxLines: typeof c.maxLines === 'number' && Number.isInteger(c.maxLines)
+        ? c.maxLines : FACTORY_MODULE_DEFAULTS.chat.maxLines,
+      opacity: typeof c.opacity === 'number' && c.opacity >= 0 && c.opacity <= 1
+        ? c.opacity : 1,
+      transform: { ...DEFAULT_TRANSFORM, ...(c.transform ?? {}) },
+      background: { ...DEFAULT_BACKGROUND, ...(c.background ?? {}) },
+      animation: { ...DEFAULT_ANIMATION, ...(c.animation ?? {}) },
     },
   }
 }
@@ -457,11 +583,46 @@ function migrateOverlay(saved) {
   }
 }
 
+function mergeBrandDefaults(saved) {
+  return sanitizeBrand(saved, DEFAULT_BRAND)
+}
+
+function propagateBrandToModule(mod, brand) {
+  if (!Array.isArray(mod.brandOverrides)) return mod
+  const overrides = new Set(mod.brandOverrides)
+
+  if (!overrides.has('background') && mod.background) {
+    mod.background.backgroundColor = brand.background.backgroundColor
+    mod.background.backgroundAlpha = brand.background.backgroundAlpha
+    mod.background.borderColor = brand.background.borderColor
+    mod.background.borderAlpha = brand.background.borderAlpha
+  }
+  if (!overrides.has('opacity')) mod.opacity = brand.opacity
+  if (!overrides.has('animation') && mod.animation) {
+    Object.assign(mod.animation, brand.animation)
+  }
+  if (!overrides.has('color') && mod.type !== 'leaderboard' && mod.color !== undefined) {
+    mod.color = (mod.type === 'text' || mod.type === 'timer') ? brand.textColor : brand.highlightColor
+  }
+  if (mod.type === 'leaderboard' && mod.appearance) {
+    if (!overrides.has('appearance.textColor')) mod.appearance.textColor = brand.textColor
+    if (!overrides.has('appearance.defaultUsernameColor')) mod.appearance.defaultUsernameColor = brand.defaultUsernameColor
+    if (!overrides.has('appearance.focusHighlightColor')) mod.appearance.focusHighlightColor = brand.highlightColor
+    if (!overrides.has('appearance.bestHighlightColor')) mod.appearance.bestHighlightColor = brand.bestHighlightColor
+    if (!overrides.has('appearance.goodHighlightColor')) mod.appearance.goodHighlightColor = brand.goodHighlightColor
+    if (!overrides.has('appearance.badHighlightColor')) mod.appearance.badHighlightColor = brand.badHighlightColor
+    if (!overrides.has('appearance.numberColor')) mod.appearance.numberColor = brand.numberColor
+  }
+
+  return mod
+}
+
 function loadState() {
   try {
     const saved          = JSON.parse(readFileSync(DATA_FILE, 'utf8'))
     const moduleDefaults = mergeModuleDefaults(saved.moduleDefaults)
     const music = mergeMusicState(saved.music)
+    const brand = mergeBrandDefaults(saved.brand)
     let overlays
     let activeId
 
@@ -482,12 +643,13 @@ function loadState() {
       activeId = 'default'
     }
 
-    return { activeId, moduleDefaults, overlays, music }
+    return { activeId, moduleDefaults, overlays, music, brand }
   } catch {
     return {
       activeId:       'default',
       moduleDefaults: mergeModuleDefaults(null),
       music: createInitialMusicState(),
+      brand: { ...DEFAULT_BRAND },
       overlays: [{
         id:   'default',
         name: 'Default',
@@ -1239,6 +1401,20 @@ compactOverlayAlbumRules()
 reloadMusicLibrary()
 const clients = new Set()
 
+// Auto-connect chat modules on startup
+;(function autoConnectChatModules() {
+  for (const overlay of state.overlays) {
+    for (const mod of overlay.modules) {
+      if (mod.type === 'chat' && mod.channel) {
+        const onMessage = (msg) => { broadcast() }
+        chatManager.connect(mod, mod.id, onMessage).catch(err => {
+          console.warn(`[chat] Auto-connect failed for #${mod.channel}: ${err.message}`)
+        })
+      }
+    }
+  }
+})()
+
 app.use(express.json({ limit: '50mb' }))
 app.use('/Music', express.static(MUSIC_DIR))
 
@@ -1288,12 +1464,25 @@ function getActive() {
 
 function buildPayload() {
   const active = getActive()
+  const chatMessages = {}
+  const chatStatuses = {}
+  if (Array.isArray(active.modules)) {
+    for (const mod of active.modules) {
+      if (mod.type === 'chat') {
+        chatMessages[mod.id] = chatManager.getMessages(mod.id)
+        chatStatuses[mod.id] = chatManager.getConnectionStatus(mod.channel)
+      }
+    }
+  }
   return JSON.stringify({
     activeId: state.activeId,
     overlays: state.overlays.map(o => ({ id: o.id, name: o.name })),
     modules:  active.modules,
     nowPlayingPopup: active.nowPlayingPopup,
     music: getMusicSnapshot(),
+    brand: state.brand,
+    chatMessages,
+    chatStatuses,
   })
 }
 
@@ -1315,6 +1504,55 @@ function patchDefaults(body) {
   }
   if (body.leaderboard && typeof body.leaderboard === 'object') {
     patchLeaderboard(state.moduleDefaults.leaderboard, body.leaderboard)
+  }
+  if (body.timer && typeof body.timer === 'object') {
+    patchTimer(state.moduleDefaults.timer, body.timer)
+  }
+  if (body.chat && typeof body.chat === 'object') {
+    const d = state.moduleDefaults.chat
+    if (typeof body.chat.platform === 'string') d.platform = body.chat.platform
+    if (typeof body.chat.channel === 'string') d.channel = body.chat.channel
+    if (typeof body.chat.clientId === 'string') d.clientId = body.chat.clientId
+    if (typeof body.chat.accessToken === 'string') d.accessToken = body.chat.accessToken
+    if (typeof body.chat.messageLimit === 'number' && body.chat.messageLimit >= 1) d.messageLimit = Math.floor(body.chat.messageLimit)
+    if (typeof body.chat.fadeOutSec === 'number' && body.chat.fadeOutSec >= 0) d.fadeOutSec = body.chat.fadeOutSec
+    if (typeof body.chat.showBadges === 'boolean') d.showBadges = body.chat.showBadges
+    if (typeof body.chat.showTimestamps === 'boolean') d.showTimestamps = body.chat.showTimestamps
+    if (typeof body.chat.fontSize === 'number' && body.chat.fontSize > 0) d.fontSize = body.chat.fontSize
+    if (typeof body.chat.usernameColor === 'string') d.usernameColor = body.chat.usernameColor
+    if (typeof body.chat.messageColor === 'string') d.messageColor = body.chat.messageColor
+    if (typeof body.chat.prefix === 'string') d.prefix = body.chat.prefix
+    if (typeof body.chat.maxLines === 'number' && Number.isInteger(body.chat.maxLines)) {
+      d.maxLines = body.chat.maxLines
+    }
+    if (typeof body.chat.opacity === 'number' && body.chat.opacity >= 0 && body.chat.opacity <= 1) {
+      d.opacity = body.chat.opacity
+    }
+    if (body.chat.transform && typeof body.chat.transform === 'object') {
+      const { x, y, scaleX, scaleY } = body.chat.transform
+      if (typeof x === 'number') d.transform.x = x
+      if (typeof y === 'number') d.transform.y = y
+      if (typeof scaleX === 'number') d.transform.scaleX = scaleX
+      if (typeof scaleY === 'number') d.transform.scaleY = scaleY
+    }
+    if (body.chat.background && typeof body.chat.background === 'object') {
+      const bg = d.background
+      if (typeof body.chat.background.backgroundColor === 'string') bg.backgroundColor = body.chat.background.backgroundColor
+      if (typeof body.chat.background.backgroundAlpha === 'number') bg.backgroundAlpha = body.chat.background.backgroundAlpha
+      if (typeof body.chat.background.borderColor === 'string') bg.borderColor = body.chat.background.borderColor
+      if (typeof body.chat.background.borderAlpha === 'number') bg.borderAlpha = body.chat.background.borderAlpha
+    }
+    if (body.chat.animation && typeof body.chat.animation === 'object') {
+      const anim = d.animation
+      if (typeof body.chat.animation.transitionDurationSec === 'number') anim.transitionDurationSec = body.chat.animation.transitionDurationSec
+      if (['none', 'up', 'down', 'left', 'right'].includes(body.chat.animation.motionDirection)) {
+        anim.motionDirection = body.chat.animation.motionDirection
+      }
+      if (typeof body.chat.animation.motionDistancePx === 'number') anim.motionDistancePx = body.chat.animation.motionDistancePx
+      if (['linear', 'quadratic', 'exponential'].includes(body.chat.animation.motionInterpolation)) {
+        anim.motionInterpolation = body.chat.animation.motionInterpolation
+      }
+    }
   }
 }
 
@@ -1339,6 +1577,27 @@ app.post('/api/defaults', (req, res) => {
   patchDefaults(req.body ?? {})
   saveState()
   res.json(state.moduleDefaults)
+})
+
+app.get('/api/brand', (req, res) => {
+  res.json(state.brand)
+})
+
+app.post('/api/brand', (req, res) => {
+  const patch = req.body ?? {}
+  const oldBrand = state.brand
+  state.brand = sanitizeBrand({ ...state.brand, ...patch }, state.brand)
+
+  // Propagate brand changes to non-overridden modules
+  for (const overlay of state.overlays) {
+    for (const mod of overlay.modules) {
+      propagateBrandToModule(mod, state.brand)
+    }
+  }
+
+  saveState()
+  broadcast()
+  res.json(state.brand)
 })
 
 app.get('/api/overlays', (req, res) => {
@@ -1441,7 +1700,10 @@ app.patch('/api/overlays/:id/modules/:moduleId', (req, res) => {
   const modIdx = overlay.modules.findIndex(m => m.id === req.params.moduleId)
   if (modIdx === -1) return res.status(404).json({ error: 'Module not found' })
   const mod = overlay.modules[modIdx]
-  const nextMod = patchOverlayModule(mod, req.body ?? {})
+  let nextMod = patchOverlayModule(mod, req.body ?? {})
+  if (req.body?.brandOverrides) {
+    nextMod = propagateBrandToModule(nextMod, state.brand)
+  }
   overlay.modules[modIdx] = nextMod
   saveState()
   // broadcast when editing the active overlay, or whenever `hidden` changes
@@ -1449,6 +1711,96 @@ app.patch('/api/overlays/:id/modules/:moduleId', (req, res) => {
   const shouldBroadcast = overlay.id === state.activeId || typeof req.body?.hidden === 'boolean'
   if (shouldBroadcast) broadcast()
   res.json(nextMod)
+})
+
+// Timer control routes
+function getTimerModule(overlayId, moduleId) {
+  const overlay = getOverlay(overlayId)
+  if (!overlay) return null
+  const modIdx = overlay.modules.findIndex(m => m.id === moduleId)
+  if (modIdx === -1) return null
+  const mod  = overlay.modules[modIdx]
+  if (mod.type !== 'timer') return null
+  return { overlay, modIdx, mod }
+}
+
+app.post('/api/overlays/:id/modules/:moduleId/timer/start', (req, res) => {
+  const ctx = getTimerModule(req.params.id, req.params.moduleId)
+  if (!ctx) return res.status(404).json({ error: 'Timer module not found' })
+  let nextMod = patchOverlayModule(ctx.mod, { status: 'running' })
+  if (ctx.mod.brandOverrides) {
+    nextMod = propagateBrandToModule(nextMod, state.brand)
+  }
+  ctx.overlay.modules[ctx.modIdx] = nextMod
+  saveState()
+  if (ctx.overlay.id === state.activeId) broadcast()
+  res.json(nextMod)
+})
+
+app.post('/api/overlays/:id/modules/:moduleId/timer/pause', (req, res) => {
+  const ctx = getTimerModule(req.params.id, req.params.moduleId)
+  if (!ctx) return res.status(404).json({ error: 'Timer module not found' })
+  let nextMod = patchOverlayModule(ctx.mod, { status: 'paused' })
+  if (ctx.mod.brandOverrides) {
+    nextMod = propagateBrandToModule(nextMod, state.brand)
+  }
+  ctx.overlay.modules[ctx.modIdx] = nextMod
+  saveState()
+  if (ctx.overlay.id === state.activeId) broadcast()
+  res.json(nextMod)
+})
+
+app.post('/api/overlays/:id/modules/:moduleId/timer/reset', (req, res) => {
+  const ctx = getTimerModule(req.params.id, req.params.moduleId)
+  if (!ctx) return res.status(404).json({ error: 'Timer module not found' })
+  let nextMod = patchOverlayModule(ctx.mod, { status: 'stopped' })
+  if (ctx.mod.brandOverrides) {
+    nextMod = propagateBrandToModule(nextMod, state.brand)
+  }
+  ctx.overlay.modules[ctx.modIdx] = nextMod
+  saveState()
+  if (ctx.overlay.id === state.activeId) broadcast()
+  res.json(nextMod)
+})
+
+// Chat connection routes
+function getChatModule(overlayId, moduleId) {
+  const overlay = getOverlay(overlayId)
+  if (!overlay) return null
+  const mod = overlay.modules.find(m => m.id === moduleId)
+  if (!mod || mod.type !== 'chat') return null
+  return { overlay, mod }
+}
+
+app.post('/api/overlays/:id/modules/:moduleId/chat/connect', async (req, res) => {
+  const ctx = getChatModule(req.params.id, req.params.moduleId)
+  if (!ctx) return res.status(404).json({ error: 'Chat module not found' })
+
+  const onMessage = (msg, mid) => {
+    if (mid === ctx.mod.id) broadcast()
+  }
+
+  const ok = await chatManager.connect(ctx.mod, ctx.mod.id, onMessage)
+  if (ok) {
+    res.json({ status: 'connected', channel: ctx.mod.channel })
+  } else {
+    res.status(400).json({ error: 'Failed to connect', status: chatManager.getConnectionStatus(ctx.mod.channel) })
+  }
+})
+
+app.post('/api/overlays/:id/modules/:moduleId/chat/disconnect', (req, res) => {
+  const ctx = getChatModule(req.params.id, req.params.moduleId)
+  if (!ctx) return res.status(404).json({ error: 'Chat module not found' })
+
+  chatManager.disconnect(ctx.mod.id)
+  res.json({ status: 'disconnected' })
+})
+
+app.get('/api/chat/status/:moduleId', (req, res) => {
+  const active = getActive()
+  const mod = active.modules.find(m => m.id === req.params.moduleId)
+  if (!mod || mod.type !== 'chat') return res.status(404).json({ error: 'Chat module not found' })
+  res.json({ status: chatManager.getConnectionStatus(mod.channel), channel: mod.channel })
 })
 
 app.get('/api/state', (req, res) => {
@@ -1886,6 +2238,15 @@ app.post('/api/music/skip', (req, res) => {
   res.json(getMusicSnapshot())
 })
 
-app.listen(PORT, () => {
-  console.log(`[server] listening on http://localhost:${PORT}`)
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`[server] listening on http://0.0.0.0:${PORT}`)
 })
+
+function shutdown() {
+  console.log('[server] Shutting down...')
+  chatManager.disconnectAll()
+  process.exit(0)
+}
+
+process.on('SIGINT', shutdown)
+process.on('SIGTERM', shutdown)
