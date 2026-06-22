@@ -1579,11 +1579,8 @@ onMounted(async () => {
   sseSource = new EventSource('/api/events')
   sseSource.onmessage = (event) => {
     const data = JSON.parse(event.data)
-    if (Array.isArray(data?.modules)) {
-      modules.value = data.modules
-      if (data?.music) music.value = data.music
-      if (data?.brand) brand.value = data.brand
-    }
+    if (data?.music) music.value = data.music
+    if (data?.brand) brand.value = data.brand
     // Update chat messages & statuses from SSE
     if (data?.chatMessages) {
       for (const [modId, msgs] of Object.entries(data.chatMessages)) {
